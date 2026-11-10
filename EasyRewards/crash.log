@@ -1,0 +1,16 @@
+
+=== 2026-11-10 16:23:26 ===
+Traceback (most recent call last):
+  File "C:\Users\2680v3\Desktop\EasyRewards\app_classic.py", line 943, in main
+    app = App()
+          ^^^^^
+  File "C:\Users\2680v3\Desktop\EasyRewards\app_classic.py", line 388, in __init__
+    self.refresh_all()
+  File "C:\Users\2680v3\Desktop\EasyRewards\app_classic.py", line 416, in refresh_all
+    w.restyle()
+  File "C:\Users\2680v3\Desktop\EasyRewards\app_classic.py", line 256, in restyle
+    self._draw()
+  File "C:\Users\2680v3\Desktop\EasyRewards\app_classic.py", line 263, in _draw
+    x = pad + t * (w - 2 * pad)
+                   ~~^~~~~~~~~
+TypeError: unsupported operand type(s) for -: 'str' and 'int'

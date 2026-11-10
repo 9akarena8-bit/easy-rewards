@@ -1,0 +1,67 @@
+"""Doubloon rebrand: name + logo + font + colors + bugfix."""
+import shutil
+from pathlib import Path
+
+B = Path(__file__).resolve().parent
+NEW = "Doubloon"
+OLD = "Easy Rewards"
+report = []
+
+def bak(p):
+    shutil.copy2(p, str(p) + ".bak")
+
+def rd(p):
+    return p.read_text(encoding="utf-8")
+
+def wr(p, t):
+    p.write_text(t, encoding="utf-8")
+
+# 0. already done?
+i18n_p = B / "i18n.py"
+if i18n_p.is_file() and NEW in rd(i18n_p):
+    print("Rebrand уже применён.")
+    input("Enter"); raise SystemExit
+
+# 1. generate coin-compass logo
+try:
+    from PIL import Image, ImageDraw
+    import math
+    S = 256
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    GOLD, GOLD_D, DARK, CREAM = (244, 185, 104), (217, 142, 43), (74, 50, 19), (255, 248, 231)
+    cx = cy = S // 2
+    d.ellipse([16, 16, 240, 240], fill=GOLD, outline=GOLD_D, width=6)
+    d.ellipse([40, 40, 216, 216], outline=DARK, width=3)
+    def ray(angle_deg, length, half_w, color):
+        a = math.radians(angle_deg)
+        tip = (cx + length * math.sin(a), cy - length * math.cos(a))
+        lx = math.cos(a) * half_w; ly = math.sin(a) * half_w
+        d.polygon([(cx - lx, cy - ly), tip, (cx + lx, cy + ly)], fill=color)
+    for ang in (0, 90, 180, 270): ray(ang, 118, 16, DARK)
+    for ang in (45, 135, 225, 315): ray(ang, 80, 11, GOLD_D)
+    d.ellipse([cx - 16, cy - 16, cx + 16, cy + 16], fill=DARK)
+    d.polygon([(cx, cy - 12), (cx + 4, cy - 4), (cx + 12, cy), (cx + 4, cy + 4),
+               (cx, cy + 12), (cx - 4, cy + 4), (cx - 12, cy), (cx - 4, cy - 4)], fill=CREAM)
+    d.ellipse([44, 30, 150, 96], fill=(255, 255, 255, 70))
+    assets = B / "assets"; assets.mkdir(exist_ok=True)
+    img.save(assets / "logo_256.png")
+    img.resize((88, 88), Image.LANCZOS).save(assets / "logo_88.png")
+    img.resize((44, 44), Image.LANCZOS).save(assets / "logo_44.png")
+    img.save(assets / "icon.ico", format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (256, 256)])
+    report.append("[OK]   логотип-монета создан")
+except Exception as e:
+    report.append(f"[!]    логотип не создан ({e})")
+
+# 2. global rename
+for fn in ["i18n.py", "app_classic.py", "webapp.py", "app.py", "backend.py", "updater.py", "README.md"]:
+    p = B / fn
+    if not p.is_file(): continue
+    t = rd(p)
+    if OLD in t:
+        bak(p); wr(p, t.replace(OLD, NEW))
+        report.append(f"[OK]   {fn}: {OLD} -> {NEW}")
+
+# 3. app_classic: bold font + pirate palette
+ac = B / "app_classic.py"
+if ac.is_file():

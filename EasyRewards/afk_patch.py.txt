@@ -1,0 +1,138 @@
+"""Anti-AFK + cycle actions: jumps, clicks, item swaps, mouse moves. Fixes template bug."""
+import shutil
+from pathlib import Path
+
+B = Path(__file__).resolve().parent
+report = []
+
+def bak(p):
+    shutil.copy2(p, str(p) + ".bak")
+
+def rd(p):
+    return p.read_text(encoding="utf-8")
+
+def wr(p, t):
+    p.write_text(t, encoding="utf-8")
+
+# ---- 1. fix template-save crash (critical bug)
+be = B / "backend.py"
+if be.is_file():
+    t = rd(be)
+    if "_safe_name(" in t:
+        bak(be)
+        wr(be, t.replace("_safe_name(", "safe_name("))
+        report.append("[OK]   backend.py: починено сохранение шаблонов")
+    else:
+        report.append("[---]  backend.py: баг шаблонов уже исправлен")
+
+# ---- 2. expand anti-AFK (add jumps, clicks, item swaps)
+co = B / "core.py"
+if co.is_file():
+    t = rd(co)
+    if "def _afk_wait" not in t:
+        report.append("[!]    core.py: не найден метод _afk_wait — не могу расширить Anti-AFK")
+    else:
+        # Insert new code right after _afk_wait() definition
+        new_code = '''
+    def _afk_actions(self, should_abort) -> None:
+        """Random actions to avoid AFK: jumps, clicks, item swaps, mouse moves."""
+        if not self.cfg.afk_enabled:
+            return
+
+        # 1. Random jump (Space)
+        if random.random() < 0.3:
+            self.io.hold_key(" ", 0.2, should_abort)
+            self.log("log.afk", key="SPACE", sec="0.2")
+
+        # 2. Random left/right mouse clicks
+        if random.random() < 0.4:
+            self.io.click(0, 0)  # LMB
+            self.log("log.afk", key="LMB", sec="0.1")
+        if random.random() < 0.2:
+            self.io.hold_key(" ", 0.1, should_abort)  # RMB
+            self.log("log.afk", key="RMB", sec="0.1")
+
+        # 3. Random item swaps (1-6)
+        if random.random() < 0.5:
+            item = str(random.randint(1, 6))
+            self.io.hold_key(item, 0.1, should_abort)
+            self.log("log.afk", key=f"ITEM {item}", sec="0.1")
+
+        # 4. Random mouse movement (small circles)
+        if random.random() < 0.3:
+            self.io.move_mouse(
+                random.randint(-15, 15),
+                random.randint(-15, 15),
+                should_abort
+            )
+            self.log("log.afk", key="MOUSE", sec="0.1")
+
+    def _afk_wait(self) -> float:
+        return max(1.0, self.cfg.afk_interval * random.uniform(0.7, 1.3))
+'''
+        # Insert the new code after _afk_wait() definition
+        parts = t.split("    def _afk_wait(self) -> float:")
+        if len(parts) > 1:
+            t = parts[0] + "    def _afk_wait(self) -> float:" + new_code + parts[1]
+            bak(co)
+            wr(co, t)
+            report.append("[OK]   core.py: расширен Anti-AFK + цикл действий")
+        else:
+            report.append("[!]    core.py: не найден метод _afk_wait — не могу расширить Anti-AFK")
+
+# ---- 3. add mouse movement to WinIO
+wi = B / "winio.py"
+if wi.is_file():
+    t = rd(wi)
+    if "def move_mouse" not in t:
+        # Add after click() method
+        new_code = '''
+    def move_mouse(self, dx: int, dy: int, should_abort: Callable[[], bool]) -> None:
+        """Small random mouse movement to avoid AFK."""
+        user32.SetCursorPos(self.io.get_cursor_x() + dx, self.io.get_cursor_y() + dy)
+        time.sleep(0.05)
+        if should_abort():
+            return
+        user32.SetCursorPos(self.io.get_cursor_x() - dx, self.io.get_cursor_y() - dy)
+        time.sleep(0.05)
+'''
+        # Insert after click() method
+        parts = t.split("    def click(self, x: int, y: int) -> None:")
+        if len(parts) > 1:
+            t = parts[0] + "    def click(self, x: int, y: int) -> None:" + parts[1].split("    def ", 1)[0] + new_code + "    def " + parts[1].split("    def ", 1)[1]
+            bak(wi)
+            wr(wi, t)
+            report.append("[OK]   winio.py: добавлен метод move_mouse")
+        else:
+            report.append("[!]    winio.py: не найден метод click — не могу добавить move_mouse")
+    else:
+        report.append("[---]  winio.py: move_mouse уже добавлен")
+
+# ---- 4. fix updater logging
+be = B / "backend.py"
+if be.is_file():
+    t = rd(be)
+    if "def _handle_update_event" in t:
+        # Add better error logging
+        new_code = '''
+        elif kind == "error":
+            self._set_upd_status("upd.failed", err=payload)
+            self._log("upd.failed", err=payload)
+            print(f"Update error: {payload}")  # Log to console for debugging
+'''
+        # Insert after "elif kind == "error":"
+        parts = t.split("        elif kind == \"error\":")
+        if len(parts) > 1:
+            t = parts[0] + "        elif kind == \"error\":" + new_code + parts[1]
+            bak(be)
+            wr(be, t)
+            report.append("[OK]   backend.py: улучшено логирование ошибок обновления")
+        else:
+            report.append("[!]    backend.py: не найден метод _handle_update_event — не могу улучшить логирование")
+    else:
+        report.append("[---]  backend.py: _handle_update_event уже есть")
+
+print("=== Anti-AFK + цикл действий ===")
+print("\n".join(report))
+print("=== Запускай run.bat ===")
+input("Enter")

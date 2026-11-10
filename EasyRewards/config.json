@@ -1,0 +1,23 @@
+{
+  "language": "ru",
+  "theme": "light",
+  "ui_language": "ru",
+  "update_url": "",
+  "auto_update": true,
+  "treasure_auto_boost": true,
+  "guide_dismissed": true,
+  "threshold": 0.8,
+  "scan_interval": 0.5,
+  "click_delay": 2.0,
+  "scales": [
+    1.0,
+    0.9,
+    1.1
+  ],
+  "require_foreground": true,
+  "auto_focus": true,
+  "afk_enabled": true,
+  "afk_interval": 6.0,
+  "afk_hold": 3.0,
+  "afk_keys": "wasd"
+}

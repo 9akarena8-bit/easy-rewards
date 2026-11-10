@@ -1,0 +1,22 @@
+from pathlib import Path
+B = Path(__file__).resolve().parent
+checks = [
+ ("treasure.py создан", "treasure.py", "treasure_state"),
+ ("backend: импорт", "backend.py", "import treasure"),
+ ("backend: функция", "backend.py", "def _treasure"),
+ ("backend: данные в state", "backend.py", '"treasure": trs'),
+ ("core: переключатель", "core.py", "treasure_auto_boost"),
+ ("updater: защита файла", "updater.py", "treasure.json"),
+ ("i18n: переводы", "i18n.py", "treasure.active"),
+ ("classic: строчка на главной", "app_classic.py", "lbl_treasure"),
+]
+print("=== проверка Treasure Hours ===")
+ok = 0
+for label, fn, marker in checks:
+    p = B / fn
+    if not p.is_file():
+        print("[НЕТ]  " + label + "  (файла " + fn + " нет)"); continue
+    print(("[ЕСТЬ] " if marker in p.read_text(encoding="utf-8") else "[НЕТ]  ") + label)
+    if marker in p.read_text(encoding="utf-8"): ok += 1
+print("=== готово " + str(ok) + " из " + str(len(checks)) + " ===")
+input("Enter, чтобы закрыть")
