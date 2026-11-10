@@ -1,4 +1,5 @@
 """UI-independent application logic for Easy Rewards.
+
 Every public method listed in Backend.API takes and returns plain JSON-able values, so the same class
 serves the pywebview window (webapp.py), the test shim and anything else.  No Windows-only imports here:
 the screen/keyboard layer (`io`) is injected.
@@ -15,33 +16,36 @@ import cv2
 import numpy as np
 
 import updater
-import treasure
 from core import ROLES, Config, Engine, best_match, imread_unicode, load_templates
 from i18n import LANGS, STRINGS
 from tracker import Tracker
 
-NUM_LIMITS = {
+NUM_LIMITS = {          # key: (type, lo, hi)
     "threshold": (float, 0.30, 0.99),
     "scan_interval": (float, 0.1, 5.0),
     "click_delay": (float, 0.0, 30.0),
     "afk_interval": (float, 1.0, 120.0),
     "afk_hold": (float, 0.1, 10.0),
 }
-BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guide_dismissed", "treasure_auto_boost")
+BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guide_dismissed")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
-        "theme": ("light", "dark"),  "ui_language": LANGS}
+        "theme": ("light", "dark"), "ui_language": LANGS}
 SHOT_MAX_W = 1600
 
-def safe_name(name: str) -> str:
-    return "".join(ch for ch in str(name) if ch.isalnum() or ch in "-")[:40] or "button"
+
+def _safe_name(name: str) -> str:
+    return "".join(ch for ch in str(name) if ch.isalnum() or ch in "-_")[:40] or "button"
+
 
 class Hooks:
-    before_capture = None
-    after_capture = None
+    """Window-system callbacks the shell may provide. All optional."""
+    before_capture = None   # () -> None   hide the app window
+    after_capture = None    # () -> None   show it again
     open_mini = None
     close_mini = None
-    save_dialog = None
-    open_dialog = None
+    save_dialog = None      # (suggested_name) -> path | None
+    open_dialog = None      # () -> path | None
+
 
 class Backend:
     API = (
@@ -70,6 +74,7 @@ class Backend:
         self.restart_requested = False
         self.version = updater.local_version(self.base)
 
+    # ------------------------------------------------------------ plumbing
     def log(self, key: str, /, **kw) -> None:
         self._log_n += 1
         self._log.append({"n": self._log_n, "t": time.strftime("%H:%M:%S"), "key": key, "kw": kw})
@@ -85,7 +90,9 @@ class Backend:
         self.engine.stop()
         self._save_cfg()
 
+    # ------------------------------------------------------------ state
     def _history(self) -> list[dict]:
+        """Six 10-minute buckets, oldest first."""
         now = time.time()
         out = [{"games": 0, "cycles": 0} for _ in range(6)]
         for key, times in (("games", self.engine.game_times), ("cycles", self.engine.cycle_times)):
@@ -105,27 +112,10 @@ class Backend:
                     counts[role] += 1
         return counts
 
-    def _treasure(self) -> dict:
-        trs = treasure.treasure_state(self.base / "treasure.json")
-        prev = getattr(self, "_tr_active", None)
-        if trs["active"] and self.cfg.treasure_auto_boost:
-            if prev is None or (prev is not None and not prev):
-                self.tracker.set_options({"boost": trs["pirate_mult"]})
-        if prev is not None and trs["active"] != prev:
-            if trs["active"]:
-                self.log("log.treasure_start", m=trs["pirate_mult"], odds=trs["pirate_odds"])
-            else:
-                self.log("log.treasure_end")
-                if self.cfg.treasure_auto_boost:
-                    self.tracker.set_options({"boost": 1.0})
-        self._tr_active = trs["active"]
-        return trs
-
     def state(self) -> dict:
         e = self.engine
         counts = self._template_counts()
         t = self.tracker
-        trs = self._treasure()
         return {
             "version": self.version,
             "cfg": {k: getattr(self.cfg, k) for k in Config.__dataclass_fields__},
@@ -140,9 +130,9 @@ class Backend:
             "luck": t.luck(),
             "week": t.week_info(),
             "update": dict(self._upd),
-            "treasure": trs,
         }
 
+    # ------------------------------------------------------------ engine controls
     def start(self) -> None:
         self.engine.start()
 
@@ -155,7 +145,9 @@ class Backend:
     def reset_stats(self) -> None:
         self.engine.reset_stats()
 
+    # ------------------------------------------------------------ config
     def set_config(self, patch: dict) -> dict:
+        """Apply validated settings. Returns {"ok": bool, "rejected": [keys]}."""
         rejected = []
         for k, v in (patch or {}).items():
             try:
@@ -185,6 +177,7 @@ class Backend:
         self._save_cfg()
         return {"ok": not rejected, "rejected": rejected}
 
+    # ------------------------------------------------------------ templates
     def templates(self) -> list[dict]:
         out = []
         folder = self.templates_root / self.cfg.language
@@ -203,13 +196,14 @@ class Backend:
         return out
 
     def delete_template(self, name: str) -> bool:
-        p = self.templates_root / self.cfg.language / f"{safe_name(name)}.png"
+        p = self.templates_root / self.cfg.language / f"{_safe_name(name)}.png"
         if p.is_file():
             p.unlink()
             return True
         return False
 
     def capture_screenshot(self, delay: float = 5.0) -> dict:
+        """Hide the window, wait, grab the screen. The full frame stays here; the UI gets a preview."""
         delay = max(0.0, min(15.0, float(delay)))
         if self.hooks.before_capture:
             self.hooks.before_capture()
@@ -240,7 +234,7 @@ class Backend:
         if x2 - x < 8 or y2 - y < 8:
             return {"ok": False, "error": "small"}
         crop = self._shot[y:y2, x:x2]
-        path = self.templates_root / self.cfg.language / f"{role}_{safe_name(name)}.png"
+        path = self.templates_root / self.cfg.language / f"{role}_{_safe_name(name)}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
         ok, buf = cv2.imencode(".png", crop)
         if not ok:
@@ -258,6 +252,7 @@ class Backend:
                    "score": round(max(0.0, best_match(gray, t.gray, self.cfg.scales)[0]), 3)} for t in tpls]
         return {"ok": True, "threshold": self.cfg.threshold, "scores": scores}
 
+    # ------------------------------------------------------------ tracker (thin, error-safe wrappers)
     def _t(self, fn, *a, **kw):
         try:
             return {"ok": True, "value": fn(*a, **kw)}
@@ -295,6 +290,7 @@ class Backend:
         return self._t(self.tracker.set_options, patch or {})
 
     def hotkey_count(self) -> None:
+        """F9: +1 on the first counter."""
         snap = self.tracker.snapshot()
         if snap["counters"]:
             self.tracker.counter_add(snap["counters"][0]["id"], 1)
@@ -324,6 +320,7 @@ class Backend:
         self.tracker.reset()
         return {"ok": True}
 
+    # ------------------------------------------------------------ updates
     def update_check(self, url: str | None = None) -> dict:
         url = (url if url is not None else self.cfg.update_url).strip()
         if not url:
@@ -337,7 +334,7 @@ class Backend:
         self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
         try:
             version, manifest = updater.check(self.base, url)
-        except Exception as exc:
+        except Exception as exc:  # network, JSON, validation
             self._upd = {"status": "error", "version": "", "notes": "", "error": str(exc)}
             return self._upd
         self._manifest = manifest
@@ -361,6 +358,7 @@ class Backend:
         self.restart_requested = True
         return self._upd
 
+    # ------------------------------------------------------------ mini window
     def open_mini(self) -> bool:
         if self.hooks.open_mini:
             self.hooks.open_mini()
@@ -372,4 +370,3 @@ class Backend:
             self.hooks.close_mini()
             return True
         return False
-    
