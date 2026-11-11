@@ -110,7 +110,7 @@
       <p class="gold-slogan">${ui("Получай награды — не трать силы и нервы.", "Earn rewards — save your time and energy.", "Отримуй нагороди — бережи час і сили.")}</p>
       <div class="gold-hero-actions"><button class="btn pri gold-play" data-act="start" ${e.running ? "disabled" : ""}><span>▶</span> ${t("btn.start")}</button>
        <button class="btn gold-stop" data-act="stop" ${!e.running ? "disabled" : ""}>■ ${t("btn.stop")}</button>
-       <button class="btn gold-pause" data-act="main" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} ${e.paused ? t("btn.resume") : t("btn.pause")}</button></div>
+       <button class="btn gold-pause" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} ${e.paused ? t("btn.resume") : t("btn.pause")}</button></div>
       <div class="gold-hero-meta">${statusBadge()}<span class="gold-version">${ui("Версия", "Version", "Версія")} ${safe(ST.version)}</span></div>
     </div><div class="gold-hero-visual" aria-hidden="true">
       <div class="gold-hero-halo"></div><img class="gold-chest" src="hero_chest.svg" alt="">
