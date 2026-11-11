@@ -127,9 +127,10 @@ class Backend:
         self._control_action = action
         self._control_time = time.strftime("%H:%M:%S")
 
-    def payment_interest_create(self, plan: str, method: str, game: str = "") -> dict:
+    def payment_interest_create(self, plan: str, method: str, game: str = "",
+                                skin_selection: dict | None = None) -> dict:
         """Save a local, non-payable request. NEVER accept payment or grant access."""
-        return self.payment_drafts.create(plan, method, game)
+        return self.payment_drafts.create(plan, method, game, skin_selection)
 
     def create_support_report(self) -> dict:
         """User-triggered local diagnostic file. Never auto-upload or leak secrets."""
