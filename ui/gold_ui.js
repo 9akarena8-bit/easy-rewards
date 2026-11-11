@@ -1,6 +1,6 @@
 /* Fortnite Pirate Token / Gold UI enhancement layer.
    No backend, engine, purchase, licence or update behavior is changed.
-   This file enhances the existing EasyRewards v1.3.3 frontend.
+   This file enhances the existing EasyRewards frontend.
    Core anti-AFK functionality remains in app.js, core.py, backend.py and winio.py. */
 (() => {
   "use strict";

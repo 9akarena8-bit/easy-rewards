@@ -24,6 +24,14 @@ kernel32 = ctypes.windll.kernel32
 user32.GetForegroundWindow.restype = wintypes.HWND
 user32.SendInput.argtypes = (wintypes.UINT, ctypes.c_void_p, ctypes.c_int)
 user32.SendInput.restype = wintypes.UINT
+user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
+user32.SetForegroundWindow.restype = wintypes.BOOL
+user32.ShowWindow.argtypes = (wintypes.HWND, ctypes.c_int)
+user32.ShowWindow.restype = wintypes.BOOL
+user32.IsWindowVisible.argtypes = (wintypes.HWND,)
+user32.IsWindowVisible.restype = wintypes.BOOL
+user32.SetCursorPos.argtypes = (ctypes.c_int, ctypes.c_int)
+user32.SetCursorPos.restype = wintypes.BOOL
 user32.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
 user32.FindWindowW.restype = wintypes.HWND
 user32.GetWindowTextW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
@@ -328,11 +336,15 @@ class WinIO:
         hwnd = user32.GetForegroundWindow()
         return bool(hwnd and self._looks_like_game(hwnd, self.foreground_title()))
 
-    def focus_game(self) -> None:
+    def focus_game(self) -> bool:
         hwnd = self._find_game()
-        if hwnd:
-            user32.ShowWindow(hwnd, 9)
-            user32.SetForegroundWindow(hwnd)
+        if not hwnd:
+            return False
+        user32.ShowWindow(hwnd, 9)
+        user32.SetForegroundWindow(hwnd)
+        # Windows may legitimately refuse a background app's focus request.
+        # Report the observed state rather than claiming success.
+        return bool(user32.GetForegroundWindow() == hwnd)
 
 
 class HotkeyPoller(threading.Thread):

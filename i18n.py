@@ -701,3 +701,33 @@ STRINGS['uk']['afk.probe_notepad_name'] = 'Блокнот'
 STRINGS['ru']['afk.probe_help'] = 'Выбери тест и за 3 секунды переключись в нужное окно. В игре W удерживается 0,3 с, в Блокноте печатается буква.'
 STRINGS['en']['afk.probe_help'] = 'Choose the test and focus the target window within 3 seconds. Fortnite holds W for 0.3 s; Notepad types one letter.'
 STRINGS['uk']['afk.probe_help'] = 'Оберіть тест і перейдіть у потрібне вікно за 3 секунди. У грі W утримується 0,3 с, у Блокноті вводиться літера.'
+
+# v1.3.4: results-screen replay and launch diagnostics.
+STRINGS["ru"].update({
+    "afk.auto_yellow": "Находить жёлтую кнопку «Играть снова» автоматически",
+    "afk.replay_help": "Программа проверяет только правую жёлтую кнопку «Играть снова», а число ТОП не учитывает. Если игра изменила оформление, сохрани образец только кнопки в «Шаблонах» — это надёжнее цветового поиска. «Вернуться в лобби» и «Остаться в команде» не нажимаются.",
+    "afk.replay_clicks": "Нажатий «Играть снова»",
+    "afk.replay_state": "Повтор матча",
+    "afk.capture_replay": "Сохранить точную кнопку «Играть снова»",
+    "afk.replay_unresponsive": "Кнопка осталась после трёх нажатий. Проверь фокус Fortnite и сделай шаблон кнопки; повторные клики остановлены.",
+    "replay.idle": "Ожидаем", "replay.seen": "Кнопка обнаружена", "replay.clicked": "Нажата, идёт загрузка", "replay.resumed": "Матч продолжается", "replay.death": "Экран смерти", "replay.unresponsive": "Нет реакции на клики",
+    "log.replay_clicked": "Играть снова: нажатие {attempt} (поиск {source})", "log.replay_resumed": "Экран результатов исчез, анти-AFK возобновлён", "log.restart_queued": "Повторный запуск запланирован после полной остановки",
+})
+STRINGS["en"].update({
+    "afk.auto_yellow": "Automatically find the yellow Play Again button",
+    "afk.replay_help": "Only the right-side yellow Play Again button is detected, never the TOP placement number. For changed UI, save a cropped Replay button template — more reliable than colour detection. Back to Lobby and Stay with Team are never clicked.",
+    "afk.replay_clicks": "Play Again clicks", "afk.replay_state": "Replay state",
+    "afk.capture_replay": "Save precise Play Again button template",
+    "afk.replay_unresponsive": "The button stayed visible after three clicks. Check Fortnite focus and capture a button template; retries stopped.",
+    "replay.idle": "Waiting", "replay.seen": "Button detected", "replay.clicked": "Clicked, loading", "replay.resumed": "Match resumed", "replay.death": "Death screen", "replay.unresponsive": "Clicks not accepted",
+    "log.replay_clicked": "Play Again: click {attempt} (source {source})", "log.replay_resumed": "Results screen gone, anti-AFK resumed", "log.restart_queued": "Restart queued after engine stops",
+})
+STRINGS["uk"].update({
+    "afk.auto_yellow": "Автоматично знаходити жовту кнопку «Грати знову»",
+    "afk.replay_help": "Програма перевіряє лише праву жовту кнопку «Грати знову», не номер ТОП. Якщо дизайн змінився, збережіть зразок кнопки Replay — це надійніше за пошук за кольором. Повернення до лобі і залишення в команді не натискаються.",
+    "afk.replay_clicks": "Натискань «Грати знову»", "afk.replay_state": "Повтор матчу",
+    "afk.capture_replay": "Зберегти точну кнопку «Грати знову»",
+    "afk.replay_unresponsive": "Кнопка лишилася після трьох натискань. Перевірте фокус Fortnite та створіть шаблон; повтори зупинено.",
+    "replay.idle": "Очікуємо", "replay.seen": "Кнопку знайдено", "replay.clicked": "Натиснуто, завантаження", "replay.resumed": "Матч триває", "replay.death": "Екран смерті", "replay.unresponsive": "Натискання не прийняті",
+    "log.replay_clicked": "Грати знову: натискання {attempt} (пошук {source})", "log.replay_resumed": "Екран результатів зник, анти-АФК відновлено", "log.restart_queued": "Повторний запуск після зупинки заплановано",
+})

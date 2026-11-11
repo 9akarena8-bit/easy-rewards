@@ -37,7 +37,7 @@ NUM_LIMITS = {          # key: (type, lo, hi)
 }
 BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
          "afk_slide_enabled", "afk_camera_enabled", "afk_slot_enabled", "afk_pickaxe_enabled",
-         "afk_grenade_enabled", "afk_weapon_enabled")
+         "afk_grenade_enabled", "afk_weapon_enabled", "afk_replay_auto_detect")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
         "theme": ("light", "dark"), "ui_language": LANGS}
 SHOT_MAX_W = 1600
@@ -160,7 +160,10 @@ class Backend:
                        "input_error": e.last_input_error,
                        "wait_reason": e.wait_reason,
                        "probe_status": e.probe_status, "probe_detail": e.probe_detail,
-                       "probe_at": e.probe_at, "probe_target": e.probe_target},
+                       "probe_at": e.probe_at, "probe_target": e.probe_target,
+                       "replay_count": e.replay_count, "replay_status": e.replay_status,
+                       "replay_source": e.replay_source, "replay_attempts": e.replay_attempts,
+                       "focus_result": e.focus_result},
             "reward": {"session": e.rewards, "total": self.reward_stats.total},
             "diagnostics": {
                 "foreground_title": (self.io.foreground_title() if hasattr(self.io, "foreground_title") else ""),
