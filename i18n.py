@@ -754,3 +754,8 @@ STRINGS["uk"].update({"state.capture_waiting": "Перевірка екрана 
     "afk.focus_denied": "Windows не дозволила переключитися. Виберіть Fortnite через Alt+Tab.",
     "afk.focus_not_found": "Вікно Fortnite не знайдено",
     "afk.focus_error": "Не вдалося активувати Fortnite"})
+
+# Show which GUI/hotkey command actually entered the Python backend.
+STRINGS["ru"]["afk.last_control"] = "Последняя полученная Python команда"
+STRINGS["en"]["afk.last_control"] = "Last command received by Python"
+STRINGS["uk"]["afk.last_control"] = "Остання отримана Python команда"
