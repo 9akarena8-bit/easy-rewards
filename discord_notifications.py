@@ -134,6 +134,10 @@ class DiscordNotifications:
         while True:
             url, message = self._pending.get()
             try:
+                # Disabling/replacing a Webhook invalidates unsent queue items.
+                with self._lock:
+                    if not self._enabled or self._url != url:
+                        continue
                 request = Request(
                     url,
                     data=json.dumps({"content": message,
