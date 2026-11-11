@@ -20,6 +20,8 @@ import updater
 import treasure
 import release_updater
 import subscription_preview
+import support_report
+import webbrowser
 from core import ROLES, Config, Engine, best_match, imread_unicode, load_templates
 from i18n import LANGS, STRINGS
 from tracker import Tracker
@@ -64,7 +66,7 @@ class Backend:
         "counter_add", "counter_set", "counter_edit", "counter_new", "counter_delete", "tokens_add",
         "prize_add", "prize_toggle", "prize_delete", "tracker_set", "tracker_export", "tracker_import",
         "tracker_reset", "update_check", "update_prepare", "update_install", "open_mini", "close_mini",
-        "input_probe_delayed",
+        "input_probe_delayed", "create_support_report", "open_support",
     )
 
     def __init__(self, base, io, hooks: Hooks | None = None):
@@ -105,6 +107,29 @@ class Backend:
         self._control_sequence += 1
         self._control_action = action
         self._control_time = time.strftime("%H:%M:%S")
+
+    def create_support_report(self) -> dict:
+        """User-triggered local diagnostic file. Never auto-upload or leak secrets."""
+        try:
+            status = self.state()
+            text = support_report.report_text(
+                self.version, self.engine, status["diagnostics"],
+                status["controls"], status["log"])
+            destination = support_report.save_report(self.base, text)
+            return {"ok": True, "path": str(destination), "text": text}
+        except Exception as exc:
+            return {"ok": False, "error": type(exc).__name__ + ": " + str(exc)[:180]}
+
+    def open_support(self, channel: str) -> dict:
+        """Open only an explicitly verified official support URL."""
+        url = support_report.verified_contact(str(channel))
+        if not url:
+            return {"ok": False, "error": "support_link_not_configured"}
+        try:
+            opened = bool(webbrowser.open(url, new=2))
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)[:180]}
+        return {"ok": opened, "error": "" if opened else "browser_not_available"}
 
     def strings(self, lang: str | None = None) -> dict:
         lang = lang if lang in LANGS else self.cfg.ui_language
@@ -162,6 +187,7 @@ class Backend:
         return {
             "version": self.version,
             "release_mode": self.release_mode,
+            "support_contacts": support_report.contacts(),
             "controls": {"last": self._control_action,
                          "time": self._control_time,
                          "sequence": self._control_sequence},
