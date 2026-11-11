@@ -520,3 +520,48 @@ STRINGS['uk'].update({'lang.ru': 'Російська', 'lang.en': 'Англій�
 STRINGS['ru'].update({'home.chart_hint': '6 столбиков по 10 минут: сколько запусков матчей и завершений за час', 'home.chart_bucket': 'Интервал {n} из 6: событий {c}', 'diag.afk_only': 'Режим движения работает. Для автоматического входа в матч пока нужно добавить образец кнопки в разделе «Шаблоны».', 'diag.focus_hint': 'Ожидание Fortnite: управление работает только когда окно игры активно.', 'upd.auto': 'Проверять обновления при запуске', 'upd.warn': 'Обновление устанавливается только после вашего подтверждения. Данные пользователя сохраняются.'})
 STRINGS['en'].update({'home.chart_hint': '6 bars of 10 minutes: matches started and completed in the past hour', 'home.chart_bucket': 'Interval {n} of 6: {c} events', 'diag.afk_only': 'Movement mode is available. To enter a match automatically, capture the Play button in Templates for now.', 'diag.focus_hint': 'Waiting for Fortnite: input is enabled only when the game window is active.', 'upd.auto': 'Check for updates at launch', 'upd.warn': 'Updates run only after your confirmation. User data is preserved.'})
 STRINGS['uk'].update({'home.chart_hint': '6 стовпчиків по 10 хвилин: запуски та завершення матчів за годину', 'home.chart_bucket': 'Інтервал {n} із 6: подій {c}', 'diag.afk_only': 'Режим руху працює. Для автоматичного входу в матч поки додайте зразок кнопки «Грати» у вкладці «Шаблони».', 'diag.focus_hint': 'Очікування Fortnite: керування працює лише за активного вікна гри.', 'upd.auto': 'Перевіряти оновлення під час запуску', 'upd.warn': 'Оновлення запускається тільки після вашого підтвердження. Дані користувача зберігаються.'})
+
+
+# v1.3.0: configurable sequence engine + explicit end-of-match templates.
+STRINGS["ru"].update({
+ "afk.subtitle_small": "СЦЕНАРИИ ДВИЖЕНИЯ", "afk.v13desc": "Случайные действия W/A/S/D, диагонали, спринт, подкат, прыжки, камера и слоты. Клавиши нажимаются только при активном окне Fortnite.",
+ "afk.total": "Действий", "afk.last": "Последнее", "afk.mode": "Режим", "afk.sequence": "Случайные сценарии (v1.3)",
+ "afk.minpause": "Минимальная пауза, с", "afk.maxpause": "Максимальная пауза, с", "afk.motion": "Движение", "afk.jump": "Прыжки (Space)",
+ "afk.sprint": "Бег и спринт (W+Shift)", "afk.slide": "Подкат и подкат с прыжком", "afk.slots": "Переключать слоты 1–6",
+ "afk.camera": "Камера", "afk.camera_on": "Случайные повороты и возврат в центр", "afk.calibration": "Пикселей на 360°", "afk.calibration_help": "Повороты приближённые: подберите значение под чувствительность мыши Fortnite. Повороты мыши не гарантируются игрой.",
+ "afk.extras": "Дополнительные действия (опционально)", "afk.pickaxe": "ЛКМ / удары киркой", "afk.grenade": "Y + ЛКМ / бросок", "afk.weapon": "Слот 2 + ПКМ + ЛКМ",
+ "afk.weapon_note": "Стрельба ограничена 1,5 с за действие. Определение пустого магазина и автоматическое выбрасывание инвентаря пока НЕ реализованы.",
+ "afk.safety": "F8 — стоп, F10 — пауза. Все удерживаемые клавиши отпускаются при остановке. Важно: автоматизация может нарушать правила Fortnite.",
+ "afk.replay_heading": "Смерть и следующий матч", "afk.replay_help": "Сохрани образец кнопки «Играть снова» как Replay, а экран смерти как Death во вкладке «Шаблоны». По Death движения прекращаются, по Replay нажимается кнопка. Без шаблонов определить смерть нельзя.",
+ "afk.replay_count": "Играть снова", "afk.death_count": "Экран смерти", "afk.capture": "Настроить шаблоны", "afk.open_settings": "Открыть настройки Anti-AFK",
+ "tpl.role_replay": "Играть снова (автонажатие)", "tpl.role_death": "Экран смерти (ожидание)", "state.await_replay": "Ожидание «Играть снова»",
+ "log.afk_action": "Анти-AFK: {action}", "diag.inputs": "Выполнено действий",
+})
+STRINGS["en"].update({
+ "afk.subtitle_small": "MOVEMENT SCENARIOS", "afk.v13desc": "Randomized WASD, diagonals, sprint, slide, jumps, camera and slots. Input only when Fortnite is foreground.",
+ "afk.total": "Actions", "afk.last": "Last", "afk.mode": "Mode", "afk.sequence": "Random sequence mode (v1.3)",
+ "afk.minpause": "Minimum pause, s", "afk.maxpause": "Maximum pause, s", "afk.motion": "Movement", "afk.jump": "Jump (Space)",
+ "afk.sprint": "Sprint (W+Shift)", "afk.slide": "Slide and slide-jump", "afk.slots": "Switch slots 1–6",
+ "afk.camera": "Camera", "afk.camera_on": "Random turns and recenter", "afk.calibration": "Pixels per 360°", "afk.calibration_help": "Turn angles are approximate. Calibrate for your Fortnite mouse sensitivity. The game may ignore synthetic input.",
+ "afk.extras": "Extra actions (opt-in)", "afk.pickaxe": "LMB / pickaxe swing", "afk.grenade": "Y + LMB / throw", "afk.weapon": "Slot 2 + RMB + LMB",
+ "afk.weapon_note": "Shooting is capped at 1.5 s per action. Empty-magazine detection and automatic inventory dropping are NOT implemented yet.",
+ "afk.safety": "F8 to stop, F10 to pause. Held keys are released on stop. Automation may violate Fortnite rules.",
+ "afk.replay_heading": "Death and next match", "afk.replay_help": "Capture 'Play Again' as Replay and the death screen as Death in Templates. Death suspends movement; Replay clicks the button. Without templates death cannot be detected.",
+ "afk.replay_count": "Play Again", "afk.death_count": "Death screen", "afk.capture": "Configure templates", "afk.open_settings": "Open Anti-AFK settings",
+ "tpl.role_replay": "Play Again (auto-click)", "tpl.role_death": "Death screen (wait)", "state.await_replay": "Waiting for Play Again",
+ "log.afk_action": "Anti-AFK: {action}", "diag.inputs": "Actions performed",
+})
+STRINGS["uk"].update({
+ "afk.subtitle_small": "СЦЕНАРІЇ РУХУ", "afk.v13desc": "Випадкові W/A/S/D, діагоналі, спринт, ковзання, стрибки, камера та слоти. Введення лише за активного вікна Fortnite.",
+ "afk.total": "Дій", "afk.last": "Остання", "afk.mode": "Режим", "afk.sequence": "Випадкові сценарії (v1.3)",
+ "afk.minpause": "Мінімальна пауза, с", "afk.maxpause": "Максимальна пауза, с", "afk.motion": "Рух", "afk.jump": "Стрибки (Space)",
+ "afk.sprint": "Спринт (W+Shift)", "afk.slide": "Ковзання та стрибок", "afk.slots": "Перемикати слоти 1–6",
+ "afk.camera": "Камера", "afk.camera_on": "Повороти та повернення в центр", "afk.calibration": "Пікселів на 360°", "afk.calibration_help": "Кути приблизні: налаштуйте під чутливість миші у Fortnite. Гра може ігнорувати штучне введення.",
+ "afk.extras": "Додаткові дії (вручну вмикаються)", "afk.pickaxe": "ЛКМ / кирка", "afk.grenade": "Y + ЛКМ / кидок", "afk.weapon": "Слот 2 + ПКМ + ЛКМ",
+ "afk.weapon_note": "Стрільба обмежена 1,5 с за дію. Виявлення порожнього магазину й автоматичне викидання інвентарю ще НЕ реалізовано.",
+ "afk.safety": "F8 — стоп, F10 — пауза. Клавіші відпускаються під час зупинки. Автоматизація може порушувати правила Fortnite.",
+ "afk.replay_heading": "Смерть і наступний матч", "afk.replay_help": "Збережіть «Грати знову» як Replay, а екран смерті як Death у «Шаблонах». Death зупиняє рух, Replay натискає кнопку. Без шаблонів виявити смерть неможливо.",
+ "afk.replay_count": "Грати знову", "afk.death_count": "Екран смерті", "afk.capture": "Налаштувати шаблони", "afk.open_settings": "Відкрити налаштування Anti-AFK",
+ "tpl.role_replay": "Грати знову (автонатискання)", "tpl.role_death": "Екран смерті (очікування)", "state.await_replay": "Очікування «Грати знову»",
+ "log.afk_action": "Анти-AFK: {action}", "diag.inputs": "Виконано дій",
+})

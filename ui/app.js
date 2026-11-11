@@ -3,7 +3,7 @@ const api = new Proxy({}, {get: (_, n) => (...a) => window.pywebview.api[n](...a
 const $ = (s, r = document) => r.querySelector(s);
 const MINI = new URLSearchParams(location.search).has("mini");
 let tplRole = "start", tplName = "", S = {}, ST = null, page = "home", sig = "", flt = "all", tplList = [], shot = null, testRes = null, toastT, hiddenUpdateVersion = "";
-const PAGES = [["home", "◉", "nav.home"], ["tracker", "✦", "nav.tracker"], ["templates", "▣", "nav.templates"],
+const PAGES = [["home", "◉", "nav.home"], ["afk", "↝", "nav.afk"], ["tracker", "✦", "nav.tracker"], ["templates", "▣", "nav.templates"],
   ["settings", "⚙", "nav.settings"], ["updates", "⟳", "nav.updates"], ["guide", "?", "nav.guide"]];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const t = (k, kw = {}) => (S[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "");
@@ -29,7 +29,7 @@ async function tick() {
 }
 function render(force) {
   const a = document.activeElement, editing = a && a.matches && a.matches("input,select") && !MINI;
-  const s = JSON.stringify([page, flt, ST.cfg.ui_language, ST.cfg.theme, ST.engine, ST.tracker.rev, ST.week, ST.guide, ST.tpl_counts,
+  const s = JSON.stringify([page, flt, ST.cfg.ui_language, ST.cfg.theme, ST.cfg, ST.engine, ST.tracker.rev, ST.week, ST.guide, ST.tpl_counts,
     ST.update, ST.log.length && ST.log.at(-1).n, tplList.length, !!shot, testRes, ST.cfg.guide_dismissed]);
   if (!force && (s === sig || (editing && !shot))) return;
   sig = s;
@@ -91,6 +91,51 @@ const PAGE = {
       <div class="row" style="margin-top:8px"><button class="btn sm pri" data-page="guide">${t("guide.open")}</button><button class="btn sm" data-act="dismiss">${t("guide.dismiss")}</button></div></div>` : ""}
     <div class="card" style="${quick ? "" : "grid-column:1/-1"}"><h3>${t("log.title")}</h3><div class="log">${ST.log.slice().reverse().map(r => `${r.t}  ${esc(t(r.key, r.kw))}`).join("<br>") || "—"}</div></div></div>`;
   },
+  afk() {
+    const c = ST.cfg, e = ST.engine;
+    const f = (label, inner) => `<div class="field"><span>${label}</span>${inner}</div>`;
+    const sl = (key, min, max, step) => `<div class="row"><input type="range" data-cfg="${key}" min="${min}" max="${max}" step="${step}" value="${c[key]}"><b data-out="${key}">${c[key]}</b></div>`;
+    const status = `<span class="pill"><span class="dot ${e.running && !e.paused ? "on" : ""}"></span>${t("state." + e.state)}</span>`;
+    return `<div class="home-topline"><div><div class="eyebrow">✧ ${t("afk.subtitle_small")}</div><div class="intro-head">${t("afk.title")}<span class="intro-line"></span></div></div>${status}</div>
+    <p class="mute">${t("afk.v13desc")}</p>
+    <div class="row" style="margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn pri" data-act="start" ${e.running ? "disabled" : ""}>▶ ${t("btn.start")}</button>
+      <button class="btn" data-act="stop" ${!e.running ? "disabled" : ""}>■ ${t("btn.stop")}</button>
+      <button class="btn" data-act="main" ${!e.running ? "disabled" : ""}>${e.paused ? t("btn.resume") : t("btn.pause")}</button>
+      <span class="badge">${t("afk.total")}: ${e.input_count}</span>
+      <span class="badge">${t("afk.last")}: ${esc(e.last_input || "—")}</span>
+    </div>
+    ${e.input_error ? `<div class="warnbox">${esc(e.input_error)}</div>` : ""}
+    <div class="grid g2" style="align-items:start">
+    <div class="card"><h3>${t("afk.mode")}</h3>
+      ${f(t("afk.enabled"), tog("afk_enabled", c.afk_enabled))}
+      ${f(t("afk.sequence"), tog("afk_sequence_enabled", c.afk_sequence_enabled))}
+      ${f(t("afk.minpause"), sl("afk_pause_min", .2, 5, .1))}
+      ${f(t("afk.maxpause"), sl("afk_pause_max", .2, 5, .1))}
+      ${f(t("afk.hold"), sl("afk_hold", .3, 4, .1))}
+      ${f(t("afk.keys"), `<input class="in" type="text" data-cfg="afk_keys" maxlength="4" value="${esc(c.afk_keys)}">`)}
+      <h3 style="margin-top:14px">${t("afk.motion")}</h3>
+      ${f(t("afk.jump"), tog("afk_jump_enabled", c.afk_jump_enabled))}
+      ${f(t("afk.sprint"), tog("afk_sprint_enabled", c.afk_sprint_enabled))}
+      ${f(t("afk.slide"), tog("afk_slide_enabled", c.afk_slide_enabled))}
+      ${f(t("afk.slots"), tog("afk_slot_enabled", c.afk_slot_enabled))}
+      </div>
+    <div class="card"><h3>${t("afk.camera")}</h3>
+      ${f(t("afk.camera_on"), tog("afk_camera_enabled", c.afk_camera_enabled))}
+      ${f(t("afk.calibration"), sl("afk_camera_pixels_360", 200, 4000, 50))}
+      <p class="mute">${t("afk.calibration_help")}</p>
+      <h3 style="margin-top:14px">${t("afk.extras")}</h3>
+      ${f(t("afk.pickaxe"), tog("afk_pickaxe_enabled", c.afk_pickaxe_enabled))}
+      ${f(t("afk.grenade"), tog("afk_grenade_enabled", c.afk_grenade_enabled))}
+      ${f(t("afk.weapon"), tog("afk_weapon_enabled", c.afk_weapon_enabled))}
+      <p class="mute">${t("afk.weapon_note")}</p>
+      <div class="warnbox">${t("afk.safety")}</div>
+      <h3 style="margin-top:14px">${t("afk.replay_heading")}</h3>
+      <p class="mute">${t("afk.replay_help")}</p>
+      <div class="row"><span class="badge">${t("afk.replay_count")}: ${ST.tpl_counts.replay || 0}</span><span class="badge">${t("afk.death_count")}: ${ST.tpl_counts.death || 0}</span></div>
+      <button class="btn sm" data-page="templates">${t("afk.capture")}</button>
+    </div></div>`;
+  },
   tracker() {
     const T = ST.tracker, L = ST.luck, pr = T.prizes.filter(p => flt === "all" || (flt === "found") === p.found), found = T.prizes.filter(p => p.found).length;
     return `<p class="mute" style="margin:0 0 14px">${t("trk.subtitle")}</p><div class="grid g3">
@@ -120,7 +165,7 @@ const PAGE = {
   },
   templates() {
     return `<p class="mute" style="margin:0 0 14px">${t("tpl.subtitle")}</p><div class="card">
-    <div class="row" style="margin-bottom:10px"><select class="in" id="role" style="width:auto">${["start", "result", "wait", "reward"].map(r => `<option value="${r}" ${tplRole === r ? "selected" : ""}>${t("tpl.role_" + r)}</option>`).join("")}</select>
+    <div class="row" style="margin-bottom:10px"><select class="in" id="role" style="width:auto">${["start", "result", "wait", "reward", "replay", "death"].map(r => `<option value="${r}" ${tplRole === r ? "selected" : ""}>${t("tpl.role_" + r)}</option>`).join("")}</select>
       <input class="in" id="tname" value="${esc(tplName)}" placeholder="${t("tpl.name")}" style="width:160px"><button class="btn pri" data-act="cap">${t("tpl.capture")}</button><button class="btn" data-act="test">${t("tpl.test")}</button></div>
     <div class="mute" style="margin-bottom:6px">${t("tpl.legend")}</div>
     ${tplList.map(x => `<div class="tpl"><img src="${x.thumb}" alt=""><div style="flex:1"><b>${esc(x.name)}</b><div class="mute">${x.w}×${x.h}px</div></div>
@@ -139,8 +184,8 @@ const PAGE = {
     <div class="card"><h3>${t("set.recognition")}</h3>
       ${f(t("set.threshold"), sl("threshold", .3, .99, .01, c.threshold))}${f(t("set.scan"), sl("scan_interval", .1, 3, .1, c.scan_interval))}${f(t("set.delay"), sl("click_delay", 0, 10, .5, c.click_delay))}
       ${f(t("set.foreground"), tog("require_foreground", c.require_foreground))}${f(t("set.focus"), tog("auto_focus", c.auto_focus))}${f(t("set.treasure_auto_boost"), tog("treasure_auto_boost", c.treasure_auto_boost))}
-      <h3 style="margin-top:18px">${t("set.movement")}</h3>${f(t("afk.enabled"), tog("afk_enabled", c.afk_enabled))}${f(t("afk.extra"), tog("afk_extra_enabled", c.afk_extra_enabled))}
-      ${f(t("afk.interval"), sl("afk_interval", 2, 30, 1, c.afk_interval))}${f(t("afk.hold"), sl("afk_hold", .5, 6, .5, c.afk_hold))}${f(t("afk.keys"), `<input type="text" data-cfg="afk_keys" value="${esc(c.afk_keys)}" maxlength="4">`)}</div></div>`;
+       <h3 style="margin-top:18px">${t("set.movement")}</h3>
+       <button class="btn sm" data-page="afk">${t("afk.open_settings")}</button></div></div>`;
   },
   updates() {
     const u = ST.update, msg = {idle: "", need_url: t("upd.need_url"), checking: t("upd.checking"), downloading: t("upd.downloading"), installer_started:t("upd.installer_started"), latest: t("upd.latest", {v: u.version}),
