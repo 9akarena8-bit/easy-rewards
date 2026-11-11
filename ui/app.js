@@ -4,7 +4,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const MINI = new URLSearchParams(location.search).has("mini");
 let pointerIsDown = false, pollingInProgress = false;
 let stableViewSignature = "", lastRenderedLog = -1;
-let tplRole = "start", tplName = "", S = {}, ST = null, page = "home", sig = "", flt = "all", tplList = [], shot = null, testRes = null, supportReport = null, toastT, hiddenUpdateVersion = "";
+let tplRole = "start", tplName = "", S = {}, ST = null, page = "home", sig = "", flt = "all", tplList = [], shot = null, testRes = null, supportReport = null, paymentDraft = null, payPlan = "day", payMethod = "stars", payGame = "dota2", toastT, hiddenUpdateVersion = "";
 const PAGES = [["home", "◉", "nav.home"], ["afk", "↝", "nav.afk"], ["tracker", "✦", "nav.tracker"], ["templates", "▣", "nav.templates"],
   ["settings", "⚙", "nav.settings"], ["updates", "⟳", "nav.updates"], ["subscriptions", "◇", "nav.subscriptions"], ["support", "⚑", "nav.support"], ["guide", "?", "nav.guide"]];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
@@ -135,10 +135,10 @@ function render(force) {
   // Engine counters, focus and runtime change every poll. Replacing #app
   // each time destroys the buttons under the user's mouse in WebView2.
   // Keep Home and Anti-AFK DOM stable; update their metrics in place.
-  const stablePage = !MINI && (page === "home" || page === "afk");
+  const stablePage = !MINI && (page === "home" || page === "afk" || page === "subscriptions");
   const staticSignature = JSON.stringify([page, flt, ST.cfg.ui_language, ST.cfg.theme,
     ST.cfg, ST.tracker.rev, ST.week, ST.guide, ST.tpl_counts, ST.update,
-    ST.release_news, ST.subscription, tplList.length, Boolean(shot), testRes]);
+    ST.release_news, ST.subscription, ST.payment_hub, tplList.length, Boolean(shot), testRes]);
   const sameRenderedPage = document.querySelector('#app [data-current-page]')?.dataset.currentPage === page;
   if (!force && stablePage && sameRenderedPage && staticSignature === stableViewSignature) {
     refreshLiveMetrics();
@@ -360,7 +360,8 @@ const PAGE = {
     <div class="card" style="margin-top:16px"><h3>${t("subs.payments")}</h3>
       <p class="mute">${t("subs.payments_disabled")}</p><div class="row">
       <button type="button" class="btn" disabled>${t("subs.card")}</button>
-      <button type="button" class="btn" disabled>${t("subs.sbp")}</button></div></div>`;
+      <button type="button" class="btn" disabled>${t("subs.sbp")}</button></div></div>
+    ${paymentHubMarkup()}`;
   },
   support() {
     const links = ST.support_contacts || {};
@@ -416,6 +417,54 @@ const PAGE = {
       <div class="grid"><div class="warnbox">${t("guide.warn")}</div></div></div>`;
   },
 };
+function paymentHubMarkup() {
+  const hub = ST.payment_hub || {methods:[], games:[], drafts:[]};
+  const methods = Array.isArray(hub.methods) ? hub.methods : [];
+  const games = Array.isArray(hub.games) ? hub.games : [];
+  const options = (sub) => sub.plans?.filter(p => p.id !== "demo") || [];
+  const skin = payMethod === "steam_items";
+  const selected = games.find(g => g.id === payGame);
+  const plans = options(ST.subscription || {});
+  const renderOption = (value, caption, active) => `<option value="${esc(value)}" ${value === active ? "selected" : ""}>${esc(caption)}</option>`;
+  const warn = selected?.trade_protected ? t("payments.cs2_wait") : t("payments.tradable_only");
+  return `<section class="card" style="margin-top:16px" id="payment-hub">
+    <h3>${t("payments.title")}</h3>
+    <p class="mute">${t("payments.description")}</p>
+    <div class="warnbox">${t("payments.not_live")}</div>
+    <div class="grid g2" style="margin-top:14px">
+      <div>
+        <label class="mute" for="pay-plan">${t("payments.plan")}</label>
+        <select id="pay-plan" class="in" style="width:100%;margin-top:6px">
+          ${plans.map(p => renderOption(p.id, t("subs." + p.id) + " · " + (p.hours || "?") + " h", payPlan)).join("")}
+        </select>
+      </div>
+      <div>
+        <label class="mute" for="pay-method">${t("payments.method")}</label>
+        <select id="pay-method" class="in" style="width:100%;margin-top:6px">
+          ${methods.map(m => renderOption(m.id, t("payments.method_" + m.id), payMethod)).join("")}
+        </select>
+      </div>
+    </div>
+    ${skin ? `<div style="margin-top:14px">
+        <label class="mute" for="pay-game">${t("payments.game")}</label>
+        <select id="pay-game" class="in" style="width:100%;margin-top:6px">
+          ${games.map(g => renderOption(g.id, g.name + (g.trade_protected ? " · 7d" : ""), payGame)).join("")}
+        </select>
+        <p class="mute" style="margin-top:8px">${warn}</p>
+        <p class="mute">${t("payments.no_quotes")}</p>
+        </div>`
+      : `<p class="mute" style="margin-top:14px">${t("payments.hint_" + payMethod)}</p>`}
+    <p class="mute">${t("payments.price_unset")}</p>
+    <div class="row" style="margin-top:12px">
+      <button class="btn pri" data-act="payment_draft">${t("payments.save_draft")}</button>
+    </div>
+    ${paymentDraft?.ok ? `<div class="warnbox" style="margin-top:12px">
+      ${t("payments.draft_id")}: <b>${esc(paymentDraft.id)}</b>
+      <p style="margin:8px 0 0">${t("payments.draft_warning")}</p>
+      </div>` : ""}
+    <p class="mute" style="margin-top:15px">${t("payments.security")}</p>
+  </section>`;
+}
 function renderMini() {
   const e = ST.engine, T = ST.tracker;
   $("#app").innerHTML = `<div class="minibox"><div class="minirow"><span class="pill"><span class="dot ${e.running ? "on" : ""}"></span>${t("state." + e.state)}</span>
@@ -491,6 +540,13 @@ document.addEventListener("click", async ev => {
     toast(result.ok ? t("discord.cleared") : t("support.failed") + ": " + String(result.error || ""));
     return tick();
   }
+  if (a === "payment_draft") {
+    const result = await api.payment_interest_create(payPlan, payMethod, payMethod === "steam_items" ? payGame : "");
+    paymentDraft = result;
+    toast(result.ok ? t("payments.draft_saved") : t("support.failed") + ": " + String(result.error || ""));
+    await tick();
+    return render(true);
+  }
   if (a === "support_report") {
     supportReport = await api.create_support_report();
     if (!supportReport.ok) toast(t("support.failed") + ": " + String(supportReport.error || ""));
@@ -546,7 +602,11 @@ document.addEventListener("click", async ev => {
   if (a === "ulater") { hiddenUpdateVersion = ST.update.version; return render(true); }
 });
 document.addEventListener("input", ev => { const e = ev.target; if (e.id === "tname") tplName = e.value; if (e.dataset.cfg && e.type === "range") { const o = $(`[data-out="${e.dataset.cfg}"]`); if (o) o.textContent = e.value; } });
-document.addEventListener("change", async ev => { const e = ev.target; if (e.id === "role") tplRole = e.value;
+document.addEventListener("change", async ev => { const e = ev.target;
+  if (e.id === "pay-plan") { payPlan = e.value; paymentDraft = null; return render(true); }
+  if (e.id === "pay-method") { payMethod = e.value; paymentDraft = null; return render(true); }
+  if (e.id === "pay-game") { payGame = e.value; paymentDraft = null; return render(true); }
+  if (e.id === "role") tplRole = e.value;
   if (e.dataset.cfg) { await patch({[e.dataset.cfg]: e.value}); toast(t("toast.saved")); }
   else if (e.id === "wk") { await api.tracker_set({week_start: e.value}); tick(); }
   else if (e.id === "boost" || e.id === "odds") { /* Save explicitly with the button. */ } });
