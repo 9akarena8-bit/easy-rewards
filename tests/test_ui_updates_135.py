@@ -28,7 +28,7 @@ def test_ui_avoids_periodic_full_rebuild_and_preserves_scroll():
     assert "savedNavScroll" in gold
     assert "release_news" in gold
     assert 'data-act="stop"' in gold
-    assert 'data-act="main"' in gold
+    assert 'data-act="pause"' in gold
 
 
 def test_news_parses_only_valid_published_releases(monkeypatch):
