@@ -38,4 +38,4 @@ def test_no_gold_edition_branding_and_subscription_not_live():
     assert "GOLD EDITION" not in source
     assert 'const remaining = ()' in source
     assert (ROOT / "subscription_preview.py").exists()
-    assert "1.3.6" == (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    assert "1.3.7" == (ROOT / "VERSION").read_text(encoding="utf-8").strip()
