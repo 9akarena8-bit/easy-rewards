@@ -100,15 +100,25 @@ def main() -> int:
         "F10": backend.engine.toggle_pause,
     }).start()
 
-    def auto_update():
-        time.sleep(4)
-        if backend.cfg.auto_update and (backend.release_mode or backend.cfg.update_url):
-            backend.update_check()
+    update_shutdown = threading.Event()
 
-    threading.Thread(target=auto_update, daemon=True).start()
+    def auto_update():
+        if update_shutdown.wait(4):
+            return
+        while not update_shutdown.is_set():
+            if backend.cfg.auto_update and (backend.release_mode or backend.cfg.update_url):
+                if backend.state()["update"]["status"] not in ("ready", "downloading", "installer_started"):
+                    result = backend.update_check()
+                    if result["status"] == "available" and backend.release_mode:
+                        backend.update_prepare()  # only download; never silently install
+            if update_shutdown.wait(300):  # every 5 minutes, not only at startup
+                break
+
+    threading.Thread(target=auto_update, name="update-watcher", daemon=True).start()
     try:
         webview.start()
     finally:
+        update_shutdown.set()
         backend.shutdown()
 
     if backend.restart_requested:

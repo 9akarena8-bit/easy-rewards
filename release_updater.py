@@ -26,7 +26,7 @@ TIMEOUT_SECONDS = 25
 
 def _urlopen(url: str):
     return urlopen(Request(url, headers={
-        "User-Agent": "EasyRewards-ReleaseUpdater/1.2.4",
+        "User-Agent": "EasyRewards-ReleaseUpdater/1.3.2",
         "Accept": "application/vnd.github+json" if url == RELEASE_API else "application/octet-stream",
     }), timeout=TIMEOUT_SECONDS)
 
@@ -85,6 +85,21 @@ def latest_release(current_version: str) -> dict | None:
             "notes": str(raw.get("body") or "")[:1200]}
 
 
+def verify_installer(meta: dict, path: Path) -> bool:
+    """Validate the exact downloaded artifact against the release manifest."""
+    try:
+        p = Path(path)
+        if p.name != meta["filename"] or p.stat().st_size != int(meta["size"]):
+            return False
+        digest = hashlib.sha256()
+        with p.open("rb") as f:
+            for chunk in iter(lambda: f.read(128 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest() == meta["sha256"]
+    except (OSError, KeyError, TypeError, ValueError):
+        return False
+
+
 def download_installer(meta: dict, directory: Path | None = None) -> Path:
     """Download and verify the EXE before it can be launched."""
     version = str(meta["version"])
@@ -102,6 +117,8 @@ def download_installer(meta: dict, directory: Path | None = None) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / expected_name
     pending = folder / (expected_name + ".download")
+    if verify_installer(meta, target):
+        return target
     digest = hashlib.sha256()
     total = 0
     try:

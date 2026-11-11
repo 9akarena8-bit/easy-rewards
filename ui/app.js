@@ -4,7 +4,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const MINI = new URLSearchParams(location.search).has("mini");
 let tplRole = "start", tplName = "", S = {}, ST = null, page = "home", sig = "", flt = "all", tplList = [], shot = null, testRes = null, toastT, hiddenUpdateVersion = "";
 const PAGES = [["home", "◉", "nav.home"], ["afk", "↝", "nav.afk"], ["tracker", "✦", "nav.tracker"], ["templates", "▣", "nav.templates"],
-  ["settings", "⚙", "nav.settings"], ["updates", "⟳", "nav.updates"], ["guide", "?", "nav.guide"]];
+  ["settings", "⚙", "nav.settings"], ["updates", "⟳", "nav.updates"], ["subscriptions", "◇", "nav.subscriptions"], ["guide", "?", "nav.guide"]];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const t = (k, kw = {}) => (S[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "");
 const fmtT = s => [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(n => String(n).padStart(2, "0")).join(":");
@@ -30,7 +30,7 @@ async function tick() {
 function render(force) {
   const a = document.activeElement, editing = a && a.matches && a.matches("input,select") && !MINI;
   const s = JSON.stringify([page, flt, ST.cfg.ui_language, ST.cfg.theme, ST.cfg, ST.engine, ST.tracker.rev, ST.week, ST.guide, ST.tpl_counts,
-    ST.update, ST.log.length && ST.log.at(-1).n, tplList.length, !!shot, testRes, ST.cfg.guide_dismissed]);
+    ST.update, ST.subscription, ST.log.length && ST.log.at(-1).n, tplList.length, !!shot, testRes, ST.cfg.guide_dismissed]);
   if (!force && (s === sig || (editing && !shot))) return;
   sig = s;
   if (MINI) { renderMini(); if (!document.getElementById("running-interface")) { const mark = document.createElement("span"); mark.id = "running-interface"; mark.hidden = true; document.body.append(mark); } return; }
@@ -44,9 +44,9 @@ function render(force) {
     <div class="seg">${["ru", "en", "uk"].map(languageButton).join("")}</div>
     <button class="icon" data-act="theme" title="${t("set.theme")}">${ST.cfg.theme === "dark" ? "☀" : "☾"}</button>
     <button class="icon" data-act="mini" title="${t("mini.open")}">⧉</button></header>
-    ${ST.update.status === "available" && hiddenUpdateVersion !== ST.update.version ? `<div class="update-banner">
-      <div><b>${t("upd.banner_title", {v: esc(ST.update.version)})}</b><span>${t("upd.banner_subtitle")}</span></div>
-      <button class="btn pri sm" data-act="uinst">${t("upd.install")}</button>
+    ${["available", "downloading", "ready"].includes(ST.update.status) && hiddenUpdateVersion !== ST.update.version ? `<div class="update-banner">
+      <div><b>${t("upd.banner_title", {v: esc(ST.update.version)})}</b><span>${ST.update.status === "ready" ? t("upd.ready") : ST.update.status === "downloading" ? t("upd.downloading") : t("upd.banner_subtitle")}</span></div>
+      <button class="btn pri sm" data-act="uinst" ${ST.update.status === "downloading" ? "disabled" : ""}>${t("upd.exit_install")}</button>
       <button class="btn sm" data-act="ulater">${t("upd.later")}</button></div>` : ""}
     <div class="page">${PAGE[page]()}</div></section>${shot ? overlay() : ""}`;
   if (shot) bindShot();
@@ -188,13 +188,32 @@ const PAGE = {
        <button class="btn sm" data-page="afk">${t("afk.open_settings")}</button></div></div>`;
   },
   updates() {
-    const u = ST.update, msg = {idle: "", need_url: t("upd.need_url"), checking: t("upd.checking"), downloading: t("upd.downloading"), installer_started:t("upd.installer_started"), latest: t("upd.latest", {v: u.version}),
+    const u = ST.update, msg = {idle: "", need_url: t("upd.need_url"), checking: t("upd.checking"), downloading: t("upd.downloading"), installer_started:t("upd.installer_started"), ready:t("upd.ready"), latest: t("upd.latest", {v: u.version}),
       available: t("upd.available", {v: u.version}), installed: t("upd.done_running", {v: u.version}), error: t("upd.failed", {err: u.error})}[u.status] || "";
     return `<div class="card" style="max-width:640px"><p class="mute" style="margin-top:0">${t("upd.subtitle")}</p><p>${t("upd.version", {v: ST.version})}</p>
       ${ST.release_mode ? `<p class="update-channel">GitHub Releases · 9akarena8-bit/easy-rewards</p>` : `<input class="in" id="uurl" type="url" placeholder="https://…/version.json" value="${esc(ST.cfg.update_url)}">`}
       <div class="field"><span>${t("upd.auto")}</span>${tog("auto_update", ST.cfg.auto_update)}</div>
-      <div class="row"><button class="btn pri" data-act="ucheck" ${u.status === "downloading" ? "disabled" : ""}>${t("upd.check")}</button>${u.status === "available" ? `<button class="btn" data-act="uinst">${t("upd.install")}</button>` : ""}</div>
+      <div class="row"><button class="btn pri" data-act="ucheck" ${u.status === "downloading" ? "disabled" : ""}>${t("upd.check")}</button>${["available", "ready"].includes(u.status) ? `<button class="btn" data-act="uinst">${t("upd.exit_install")}</button>` : ""}</div>
       <p>${esc(msg)}</p><div class="warnbox">${t("upd.warn")}</div></div>`;
+  },
+  subscriptions() {
+    const sub = ST.subscription || {plans:[], payment_methods:[], enabled:false};
+    const labels = {demo:"subs.demo", day:"subs.day", three_days:"subs.three_days", week:"subs.week"};
+    return `<p class="mute" style="margin:0 0 14px">${t("subs.intro")}</p>
+    <div class="card" style="margin-bottom:16px"><div class="row" style="justify-content:space-between;align-items:center">
+      <h3 style="margin:0">${t("subs.status_title")}</h3><span class="badge">${t("subs.not_active")}</span></div>
+      <div class="sub-remaining">—</div><p class="mute">${t("subs.remain_text")}</p>
+      <p class="mute">${t("subs.notice_text")}</p></div>
+    <h3>${t("subs.plans_title")}</h3>
+    <div class="grid g2 subs-grid">${(sub.plans || []).map(p => `<div class="card">
+      <div class="eyebrow">◇ EASY REWARDS</div><h3>${t(labels[p.id] || "subs.demo")}</h3>
+      <p class="mute">${p.id === "demo" ? t("subs.demo_note") : t("subs.access_note")}</p>
+      <div class="row" style="justify-content:space-between"><b>${t("subs.price_unset")}</b>
+      <button type="button" class="btn sm" disabled>${t("subs.unavailable")}</button></div></div>`).join("")}</div>
+    <div class="card" style="margin-top:16px"><h3>${t("subs.payments")}</h3>
+      <p class="mute">${t("subs.payments_disabled")}</p><div class="row">
+      <button type="button" class="btn" disabled>${t("subs.card")}</button>
+      <button type="button" class="btn" disabled>${t("subs.sbp")}</button></div></div>`;
   },
   guide() {
     const g = ST.guide, go = {1: ["templates", "guide.go"], 2: ["templates", "guide.go"], 3: ["templates", "guide.go"], 4: ["home", "guide.go"], 5: ["tracker", "guide.go"], 6: ["updates", "guide.go"]};
