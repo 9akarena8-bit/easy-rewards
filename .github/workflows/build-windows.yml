@@ -1,4 +1,5 @@
 name: Build Windows Installer
+
 on:
   workflow_dispatch:
   push:
@@ -13,28 +14,48 @@ on:
       - 'BUILD_INSTALLER.bat'
       - 'installer.iss'
       - '.github/workflows/build-windows.yml'
+
 permissions:
   contents: write
+
+concurrency:
+  group: easy-rewards-stable-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Check version is consistent
+        id: version
         shell: pwsh
         run: |
           $v = (Get-Content VERSION -Raw).Trim()
           if ($v -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid VERSION' }
           if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$v") { throw 'Tag and VERSION mismatch' }
           if (-not (Select-String -Path installer.iss -SimpleMatch ('#define AppVersion "' + $v + '"'))) { throw 'Inno Setup version mismatch' }
+          "tag=v$v" >> $env:GITHUB_OUTPUT
+      - name: Install dependencies and run regression tests
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements.txt -r requirements-ui.txt pytest 'pyinstaller>=6,<7'
+          python -m compileall -q core.py backend.py webapp.py winio.py release_updater.py tests
+          python -m pytest -q
+          if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
+          node --check ui/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax failed' }
+          node --check ui/gold_ui.js
+          if ($LASTEXITCODE -ne 0) { throw 'Gold UI syntax failed' }
       - name: Build EXE and installer
         shell: pwsh
         run: |
-          python -m pip install -r requirements.txt -r requirements-ui.txt 'pyinstaller>=6,<7'
           python -m PyInstaller --noconfirm --clean --onedir --windowed --name EasyRewards --icon 'assets/icon.ico' --add-data 'ui:ui' --add-data 'assets:assets' --add-data 'VERSION:.' --collect-submodules webview app.py
+          if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed' }
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
           if (!(Test-Path $iscc)) { $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 7/ISCC.exe' }
           if (!(Test-Path $iscc)) {
@@ -56,10 +77,27 @@ jobs:
           name: EasyRewards-Windows-Setup
           path: release/*
           if-no-files-found: error
-      - name: Publish GitHub Release when version tag is pushed
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Check if this version is already published
+        id: publication
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          gh release view $tag --repo '${{ github.repository }}' --json tagName *> $null
+          if ($LASTEXITCODE -eq 0) {
+            "publish=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Release $tag already exists. Keeping existing published files."
+          } else {
+            "publish=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Release $tag not found. Publish after successful build."
+          }
+      - name: Publish Stable GitHub Release automatically
+        if: steps.publication.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: |
             release/*.exe
             release/*.sha256
