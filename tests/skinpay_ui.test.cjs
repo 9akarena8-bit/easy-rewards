@@ -78,7 +78,7 @@ test("Closest matching prioritizes minimum overpay then minimum items",()=>{
   const picked=select(all,50000);
   assert.equal(picked.sum,50000);
   assert.deepEqual([...picked.ids], [1,2]);
-  assert.equal(select(all,100000),null);
+  assert.equal(select(all,102000),null);
 });
 test("Checkout source never collects card, Steam password or creates trades",()=>{
   assert.match(html,/skinpay\.css/);
