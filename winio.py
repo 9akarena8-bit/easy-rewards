@@ -22,6 +22,8 @@ user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 # Explicit pointer-sized signatures prevent truncated HWND/HANDLE values on Win64.
 user32.GetForegroundWindow.restype = wintypes.HWND
+user32.SendInput.argtypes = (wintypes.UINT, ctypes.c_void_p, ctypes.c_int)
+user32.SendInput.restype = wintypes.UINT
 user32.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
 user32.FindWindowW.restype = wintypes.HWND
 user32.GetWindowTextW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
@@ -50,7 +52,7 @@ MOUSEEVENTF_MOVE = 0x0001
 SCANCODES = {"w": 0x11, "a": 0x1E, "s": 0x1F, "d": 0x20, " ": 0x39,
              "space": 0x39, "shift": 0x2A, "ctrl": 0x1D, "y": 0x15,
              "1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06, "6": 0x07}
-VK = {"F7": 0x76, "F8": 0x77, "F9": 0x78, "F10": 0x79}
+VK = {"F6": 0x75, "F7": 0x76, "F8": 0x77, "F9": 0x78, "F10": 0x79}
 
 
 class KEYBDINPUT(ctypes.Structure):
@@ -75,7 +77,8 @@ class INPUT(ctypes.Structure):
 
 def _send(inp: INPUT) -> None:
     if user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT)) != 1:
-        raise OSError("Windows SendInput failed (privileges or foreground application)")
+        code = kernel32.GetLastError()
+        raise OSError(f"SendInput returned 0 (Win32 error={code}; permissions or protected app).")
 
 
 def _key(scan: int, up: bool) -> None:
@@ -288,13 +291,17 @@ class WinIO:
             kernel32.CloseHandle(handle)
 
     def _looks_like_game(self, hwnd, title: str) -> bool:
-        if self.window_title.casefold() in title.casefold():
-            return True
-        return self._process_name(hwnd).casefold().startswith("fortniteclient-")
+        # Prefer process identity to a browser tab or unrelated window whose
+        # title happens to contain "Fortnite". If Windows denies reading the
+        # process name, the exact window title is a conservative fallback.
+        process = self._process_name(hwnd).casefold()
+        if process:
+            return process.startswith("fortniteclient-") or process == "fortniteclient.exe"
+        return title.strip().casefold() == self.window_title.casefold()
 
     def _find_game(self):
         found = user32.FindWindowW(None, self.window_title)
-        if found:
+        if found and self._looks_like_game(found, self.window_title):
             return found
         # Game window titles may contain a prefix/suffix. Search only visible
         # top-level windows; never search process memory or inject into a game.
@@ -313,6 +320,9 @@ class WinIO:
 
     def game_window_found(self) -> bool:
         return bool(self._find_game())
+
+    def foreground_process(self) -> str:
+        return self._process_name(user32.GetForegroundWindow())
 
     def game_in_foreground(self) -> bool:
         hwnd = user32.GetForegroundWindow()

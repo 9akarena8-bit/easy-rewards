@@ -58,7 +58,7 @@ def main() -> int:
     # draw a compact title bar and softly rounded *inner* corners. Keep the
     # background opaque: pywebview doesn't support transparent Windows views.
     main_win = webview.create_window(
-        "Easy Rewards", UI.as_uri(),
+        "Fortnite Pirate Token", UI.as_uri(),
         js_api=JsApi(), width=1180, height=760,
         min_size=(900, 600), frameless=True, easy_drag=False,
         shadow=True, background_color="#08090b",
@@ -68,7 +68,7 @@ def main() -> int:
         if mini["w"] is not None:
             return
         mini["w"] = webview.create_window(
-            "Easy Rewards — Mini", UI.as_uri() + "?mini=1", js_api=JsApi(),
+            "Fortnite Pirate Token — Mini", UI.as_uri() + "?mini=1", js_api=JsApi(),
             width=300, height=250, on_top=True, resizable=False,
             background_color="#0c0d10",
         )
@@ -94,6 +94,7 @@ def main() -> int:
     hooks.open_dialog = open_dialog
 
     winio.HotkeyPoller({
+        "F6": backend.engine.input_probe,
         "F7": backend.engine.start,
         "F8": backend.engine.stop,
         "F9": backend.hotkey_count,

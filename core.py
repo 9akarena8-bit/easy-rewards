@@ -107,11 +107,14 @@ def load_templates(root: Path, language: str) -> list[Template]:
     return out
 
 
-def best_match(frame_gray: np.ndarray, tpl: np.ndarray, scales) -> tuple[float, tuple[int, int]]:
+def best_match(frame_gray: np.ndarray, tpl: np.ndarray, scales,
+               should_abort: Callable[[], bool] | None = None) -> tuple[float, tuple[int, int]]:
     """Return (score, (cx, cy)) of the best multi-scale match."""
     best = (-1.0, (0, 0))
     fh, fw = frame_gray.shape[:2]
     for s in scales:
+        if should_abort is not None and should_abort():
+            break
         t = tpl
         if abs(s - 1.0) > 1e-3:
             interp = cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR
@@ -172,6 +175,12 @@ class Engine:
         self.last_input_error = ""
         self._last_afk_type = ""
         self._last_slot = 0
+        self.wait_reason = ""
+        self.probe_status = "idle"
+        self.probe_detail = ""
+        self.probe_at = ""
+        self.probe_target = ""
+        self._probe_lock = threading.Lock()
 
     # ---- public controls (thread safe)
     @property
@@ -195,7 +204,7 @@ class Engine:
 
     def start(self) -> None:
         if self.running:
-            if self.paused:
+            if self.paused and not self._stop.is_set():
                 self.toggle_pause()
             return
         n = self.reload_templates()
@@ -213,6 +222,7 @@ class Engine:
         self._next_afk = time.monotonic() + min(0.7, self._afk_wait())
         self.state = "starting"
         self.last_input_error = ""
+        self.wait_reason = ""
         self._reward_visible = False
         self._reward_absent_since = None
         self._awaiting_replay = False
@@ -220,19 +230,25 @@ class Engine:
         self._thread.start()
 
     def stop(self) -> None:
-        if not self.running:
+        """Request a stop immediately; long template recognition must not freeze UI.
+
+        A slow Windows capture/OpenCV call may still be in progress. It will
+        finish on the worker thread and acknowledge the stop; starting another
+        concurrent worker during this phase is forbidden.
+        """
+        thread = self._thread
+        if thread is None or not thread.is_alive():
+            self.state = "stopped"
             return
         self._stop.set()
-        self._thread.join(timeout=3)
-        if self._thread.is_alive():
-            self.log("log.error", err="Engine did not stop within 3 seconds")
+        self.state = "stopping"
+        if thread is threading.current_thread():
             return
-        self._thread = None
-        self.state = "stopped"
-        self.log("log.stopped")
+        thread.join(timeout=0.35)
+        # _loop's finally clause marks the engine stopped and logs exactly once.
 
     def toggle_pause(self) -> None:
-        if not self.running:
+        if not self.running or self._stop.is_set():
             return
         if self.paused:
             self._tick_mark = time.monotonic()
@@ -243,6 +259,54 @@ class Engine:
             self._paused.set()
             self.state = "paused"
             self.log("log.paused")
+
+    def input_probe(self, target: str = "fortnite") -> dict:
+        """Deliberate, bounded diagnostic. Never sends to an unexpected app.
+
+        Windows SendInput success only means the OS accepted the event, not
+        that a protected game processed it. Notepad can confirm normal typing.
+        """
+        if not self._probe_lock.acquire(blocking=False):
+            return {"status": "busy", "detail": "A test is already running"}
+        try:
+            self.probe_at = time.strftime("%H:%M:%S")
+            self.probe_target = target
+            if target not in ("fortnite", "notepad"):
+                self.probe_status = "error"
+                self.probe_detail = "Unknown test target"
+            elif self.running:
+                self.probe_status = "busy"
+                self.probe_detail = "Stop Anti-AFK before testing"
+            else:
+                def ready() -> bool:
+                    if target == "notepad":
+                        return (hasattr(self.io, "foreground_process") and
+                                self.io.foreground_process().lower() == "notepad.exe")
+                    return self.io.game_in_foreground()
+                if not ready():
+                    self.probe_status = "waiting_window"
+                    self.probe_detail = f"{target} is not the active window"
+                else:
+                    try:
+                        if target == "notepad":
+                            self.io.press_key("w")
+                        elif hasattr(self.io, "hold_keys"):
+                            self.io.hold_keys(("w",), 0.30, lambda: not ready())
+                        else:
+                            self.io.hold_key("w", 0.30, lambda: not ready())
+                        if ready():
+                            self.probe_status = "sent"
+                            self.probe_detail = f"Windows accepted W input; check {target} visually"
+                        else:
+                            self.probe_status = "waiting_window"
+                            self.probe_detail = f"{target} lost focus during test"
+                    except Exception as exc:
+                        self.probe_status = "error"
+                        self.probe_detail = repr(exc)
+            self.log("log.probe_result", status=self.probe_status, detail=self.probe_detail)
+            return {"status": self.probe_status, "detail": self.probe_detail}
+        finally:
+            self._probe_lock.release()
 
     def reset_stats(self) -> None:
         self.games = 0
@@ -468,33 +532,47 @@ class Engine:
 
 
     def _loop(self) -> None:
-        while not self._stop.is_set():
-            if self._paused.is_set():
-                self._stop.wait(0.1)
-                continue
-            t0 = time.monotonic()
-            try:
-                self._tick()
-            except Exception as exc:  # keep the loop alive
-                self.log("log.error", err=repr(exc))
-                self._stop.wait(1.0)
-            self._stop.wait(max(0.0, self.cfg.scan_interval - (time.monotonic() - t0)))
-        # fold the running time in when the loop exits
-        if not self._paused.is_set():
-            self._run_seconds += time.monotonic() - self._tick_mark
+        try:
+            while not self._stop.is_set():
+                if self._paused.is_set():
+                    self._stop.wait(0.1)
+                    continue
+                t0 = time.monotonic()
+                try:
+                    self._tick()
+                except Exception as exc:
+                    self.last_input_error = repr(exc)
+                    self.log("log.error", err=repr(exc))
+                    self._stop.wait(1.0)
+                self._stop.wait(max(0.0, self.cfg.scan_interval - (time.monotonic() - t0)))
+        finally:
+            if not self._paused.is_set():
+                self._run_seconds += time.monotonic() - self._tick_mark
+            self.state = "stopped"
+            self.wait_reason = ""
+            self.log("log.stopped")
 
     def _tick(self) -> None:
+        if self._stop.is_set() or self._paused.is_set():
+            return
         cfg = self.cfg
         if (cfg.require_foreground or cfg.afk_sequence_enabled) and not self.io.game_in_foreground():
-            if cfg.auto_focus:
+            if cfg.auto_focus and not self._stop.is_set():
                 self.io.focus_game()
-                self._stop.wait(0.3)
+                self._stop.wait(0.1)
             if not self.io.game_in_foreground():
+                found = self.io.game_window_found() if hasattr(self.io, "game_window_found") else False
+                self.wait_reason = "not_foreground" if found else "not_found"
                 self.state = "waiting_window"
                 self.score = 0.0
                 return
+        self.wait_reason = ""
 
         if not self.templates:
+            if not cfg.afk_enabled:
+                self.state = "afk_disabled"
+                self.wait_reason = "afk_disabled"
+                return
             # New installations have no button images: don't waste time and CPU
             # capturing the screen just to perform a simple keyboard action.
             self.state = "afk_only"
@@ -503,6 +581,8 @@ class Engine:
             return
 
         frame = self.io.grab()
+        if self._stop.is_set() or self._paused.is_set():
+            return
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         best = None
@@ -510,7 +590,10 @@ class Engine:
         replay_match = None
         death_match = None
         for tpl in self.templates:
-            score, pos = best_match(gray, tpl.gray, cfg.scales)
+            if self._stop.is_set() or self._paused.is_set():
+                return
+            score, pos = best_match(gray, tpl.gray, cfg.scales,
+                                    lambda: self._stop.is_set() or self._paused.is_set())
             match = (score, pos, tpl)
             if tpl.role == "reward":
                 if reward_match is None or score > reward_match[0]:
@@ -523,6 +606,8 @@ class Engine:
                     death_match = match
             elif best is None or score > best[0]:
                 best = match
+        if self._stop.is_set() or self._paused.is_set():
+            return
         # Explicit death and replay templates outrank other incidental matches.
         if death_match and death_match[0] >= cfg.threshold:
             self._awaiting_replay = True

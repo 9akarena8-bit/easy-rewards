@@ -26,7 +26,7 @@ TIMEOUT_SECONDS = 25
 
 def _urlopen(url: str):
     return urlopen(Request(url, headers={
-        "User-Agent": "EasyRewards-ReleaseUpdater/1.3.2",
+        "User-Agent": "EasyRewards-ReleaseUpdater/1.3.3",
         "Accept": "application/vnd.github+json" if url == RELEASE_API else "application/octet-stream",
     }), timeout=TIMEOUT_SECONDS)
 
