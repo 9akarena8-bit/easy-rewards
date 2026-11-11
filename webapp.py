@@ -98,10 +98,10 @@ def main() -> int:
 
     winio.HotkeyPoller({
         "F6": backend.engine.input_probe,
-        "F7": backend.engine.start,
-        "F8": backend.engine.stop,
+        "F7": backend.start,
+        "F8": backend.stop,
         "F9": backend.hotkey_count,
-        "F10": backend.engine.toggle_pause,
+        "F10": backend.pause,
     }).start()
 
     update_shutdown = threading.Event()
