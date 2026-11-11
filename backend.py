@@ -86,6 +86,7 @@ class Backend:
         self.release_mode = bool(getattr(sys, "frozen", False))
         self._upd = {"status": "idle", "version": "", "notes": "", "error": ""}
         self._verified_installer: Path | None = None
+        self._release_news: list[dict] = []
         self._update_lock = threading.RLock()
         self._lock = threading.Lock()
         self.restart_requested = False
@@ -153,7 +154,7 @@ class Backend:
             "version": self.version,
             "release_mode": self.release_mode,
             "cfg": {k: getattr(self.cfg, k) for k in Config.__dataclass_fields__},
-            "engine": {"state": e.state, "running": e.running, "paused": e.paused, "score": round(e.score, 3),
+            "engine": {"state": ("stopping" if e.stopping else "paused" if e.paused and e.running else e.state), "running": e.running, "paused": e.paused, "score": round(e.score, 3),
                        "games": e.games, "cycles": e.cycles, "rewards": e.rewards, "runtime": int(e.runtime),
                        "history": self._history(),
                        "input_count": e.input_count, "last_input": e.last_input,
@@ -181,6 +182,7 @@ class Backend:
             "luck": t.luck(),
             "week": t.week_info(),
             "update": dict(self._upd),
+            "release_news": list(self._release_news),
             "subscription": subscription_preview.snapshot(),
             "treasure": trs,
         }
@@ -396,6 +398,18 @@ class Backend:
         self.tracker.reset()
         return {"ok": True}
 
+    def refresh_release_news(self) -> list[dict]:
+        """Fetch public, non-executable release headlines in the background only."""
+        if not self.release_mode:
+            return list(self._release_news)
+        try:
+            items = release_updater.release_news()
+        except Exception as exc:
+            self.log("log.error", err="release news: " + str(exc))
+            return list(self._release_news)
+        self._release_news = items
+        return list(items)
+
     # ------------------------------------------------------------ updates
     def update_check(self, url: str | None = None) -> dict:
         """Check releases without triggering an installation.
@@ -479,9 +493,14 @@ class Backend:
                             "error": "No verified GitHub release has been selected"}
                 if self.engine.running:
                     self.engine.stop()
+                    # Screen capture/OpenCV may finish asynchronously after F8.
+                    # Give it a bounded time to release input before replacing files.
+                    worker = self.engine._thread
+                    if worker is not None and worker.is_alive() and worker is not threading.current_thread():
+                        worker.join(timeout=5.0)
                     if self.engine.running:
                         return {"status": "error", "version": meta["version"], "notes": "",
-                                "error": "Stop the running session before updating"}
+                                "error": "Stop in progress: Anti-AFK is still stopping. Try again in a moment."}
                 self._upd = {"status": "downloading", "version": meta["version"], "notes": "", "error": ""}
                 try:
                     installer = self._verified_installer

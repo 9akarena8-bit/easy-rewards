@@ -46,7 +46,7 @@ def publish():
         status=subprocess.run(['git','status','--porcelain'],cwd=checkout,capture_output=True,text=True,check=True)
         if not status.stdout.strip():
             print('No changes; all code is already in GitHub.');return
-        run('git','commit','-m',f'Prepare Easy Rewards {VERSION}: stable AFK / Play Again detection',cwd=checkout)
+        run('git','commit','-m',f'Prepare Easy Rewards {VERSION}: fix UI controls, release news and quiet updates',cwd=checkout)
         run('git','push','-u','origin',BRANCH,cwd=checkout)
         print('\nUpload successful! Open a pull request:')
         print(f'https://github.com/9akarena8-bit/easy-rewards/compare/main...{BRANCH}?expand=1')

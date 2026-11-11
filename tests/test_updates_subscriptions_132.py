@@ -62,7 +62,7 @@ def test_background_prepare_never_launches_installer(monkeypatch, tmp_path):
     downloaded = []
     monkeypatch.setattr(release_updater, "latest_release", lambda v: meta)
     monkeypatch.setattr(release_updater, "download_installer", lambda metadata: downloaded.append(metadata) or installer)
-    monkeypatch.setattr(release_updater, "launch_installer", lambda p: launched.append(p))
+    monkeypatch.setattr(release_updater, "launch_installer", lambda p, **kwargs: launched.append(p))
     backend = Backend(tmp_path, NoGame())
     backend.release_mode = True
     backend.version = "1.3.2"

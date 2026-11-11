@@ -40,21 +40,28 @@
   };
   const newsItems = () => {
     const items = [];
+    // Release notes come from official GitHub Releases, not a manually updated list.
+    const published = Array.isArray(ST.release_news) ? ST.release_news : [];
+    for (const r of published.slice(0, 7)) {
+      items.push({kind:"new", icon:"✦", label:ui("Релиз " + r.version, "Release " + r.version, "Реліз " + r.version),
+        title:r.title || `Easy Rewards v${r.version}`,
+        body:r.notes || ui("Опубликовано обновление программы.", "An application update is available.", "Доступне оновлення програми.")});
+    }
     const u = ST.update || {};
     if (["available", "downloading", "ready"].includes(u.status)) {
       items.push({kind:"new", icon:"↓", label:ui("Доступно обновление", "Update available", "Доступне оновлення"),
         title:ui(`Новая версия ${u.version || ""}`, `New version ${u.version || ""}`, `Нова версія ${u.version || ""}`),
         body:u.notes || ui("Перейди в раздел новостей, чтобы установить обновление.", "Open News to install the update.", "Відкрий Новини, щоб встановити оновлення.")});
     }
-    items.push({kind:"repair",icon:"✦",label:ui("Версия 1.3.3", "Version 1.3.3", "Версія 1.3.3"),
+    if (!published.some(r => r.version === "1.3.3")) items.push({kind:"repair",icon:"✦",label:ui("Версия 1.3.3", "Version 1.3.3", "Версія 1.3.3"),
       title:ui("Исправления анти-AFK и новый лаунчер", "Anti-AFK fixes and new launcher", "Виправлення анти-AFK та новий лаунчер"),
       body:ui("Диагностика ввода, улучшенная остановка движка и обновлённый золотой интерфейс.",
               "Input diagnostics, more reliable engine stopping and a refreshed gold interface.",
               "Діагностика вводу, покращена зупинка рушія та оновлений золотий інтерфейс.")});
-    items.push({kind:"version",icon:"✧",label:ui("Версия 1.3.2", "Version 1.3.2", "Версія 1.3.2"),
+    if (!published.some(r => r.version === "1.3.2")) items.push({kind:"version",icon:"✧",label:ui("Версия 1.3.2", "Version 1.3.2", "Версія 1.3.2"),
       title:ui("Улучшена система обновлений", "Improved update system", "Покращено систему оновлень"),
       body:ui("Проверка GitHub Releases и загрузка установщика с проверкой SHA-256.", "GitHub Releases checks and verified installer download.", "Перевірка GitHub Releases та завантаження перевіреного інсталятора.")});
-    items.push({kind:"afk",icon:"↝",label:ui("Версия 1.3.0", "Version 1.3.0", "Версія 1.3.0"),
+    if (!published.some(r => r.version === "1.3.0")) items.push({kind:"afk",icon:"↝",label:ui("Версия 1.3.0", "Version 1.3.0", "Версія 1.3.0"),
       title:ui("Расширенные настройки анти-AFK", "Expanded anti-AFK controls", "Розширені налаштування анти-AFK"),
       body:ui("Параметры движений, камеры, пауз и горячих клавиш.", "Movement, camera, pauses and hotkey controls.", "Налаштування рухів, камери, пауз та гарячих клавіш.")});
     items.push({kind:"subs",icon:"♛",label:ui("В разработке", "In development", "У розробці"),
@@ -111,7 +118,7 @@
       <span class="gold-spark spark-a">✦</span><span class="gold-spark spark-b">✦</span></div></section>
     <div class="gold-dashboard"><div class="gold-dashboard-main">${newsMarkup()}
       <div class="gold-summary-grid"><section class="card gold-metrics"><div class="gold-section-head"><div><span class="gold-overline">${ui("ТВОЙ ПРОГРЕСС", "YOUR PROGRESS", "ТВІЙ ПРОГРЕС")}</span><h2>${ui("Статистика", "Statistics", "Статистика")}</h2></div></div>
-       <div class="gold-stat-grid">${stats.map(([name,value])=>`<div class="gold-stat"><b>${safe(value)}</b><span>${safe(name)}</span></div>`).join("")}</div>
+       <div class="gold-stat-grid">${stats.map(([name,value])=>`<div class="gold-stat"><b ${name === ui("Время", "Time", "Час") ? 'data-live="runtime"' : ""}>${safe(value)}</b><span>${safe(name)}</span></div>`).join("")}</div>
        <div class="gold-chart-label">${t("home.last_hour")}</div><div class="gold-bars">${hist.map(h=>`<i style="height:${Math.max(4,(h.games+h.cycles)/max*100)}%"></i>`).join("")}</div></section>
       <section class="card gold-metrics gold-diagnostics"><div class="gold-section-head"><div><span class="gold-overline">${ui("ДИАГНОСТИКА", "DIAGNOSTICS", "ДІАГНОСТИКА")}</span><h2>${t("diag.heading")}</h2></div></div>
         <div class="focus-line"><span>${t("diag.game")}</span><b class="${ST.diagnostics?.game_active ? "good" : "muted"}">${ST.diagnostics?.game_active ? t("diag.active") : t("diag.inactive")}</b></div>
@@ -127,7 +134,7 @@
        <h2>${ui("Под контролем", "In control", "Під контролем")}</h2>
        <div class="gold-quick-row"><span>${t("home.session")}</span><strong>${num(e.rewards || 0)} ✦</strong></div>
        <div class="gold-quick-row"><span>${t("home.all_time")}</span><strong>${num(ST.reward?.total || 0)} ✦</strong></div>
-       <div class="gold-quick-row"><span>${t("stat.time")}</span><strong>${fmtT(e.runtime)}</strong></div>
+       <div class="gold-quick-row"><span>${t("stat.time")}</span><strong><span data-live="runtime">${fmtT(e.runtime)}</span></strong></div>
        <div class="gold-quick-actions"><button class="btn sm" data-page="afk">${ui("Настройки анти-AFK", "Anti-AFK settings", "Налаштування анти-AFK")} ↗</button>
        <button class="btn sm" data-act="ptest" data-target="fortnite">${ui("Тест ввода (F6)", "Input test (F6)", "Тест вводу (F6)")}</button>
        <button class="btn sm" data-act="reset">${t("btn.reset")}</button></div>
@@ -154,6 +161,7 @@
   };
   function renderGold(force) {
     const oldSig = sig;
+    const savedNavScroll = document.querySelector('#app .gold-nav')?.scrollTop || 0;
     originalRender(force);
     if (MINI || (!force && sig === oldSig)) return;
     const root = document.getElementById("app");
@@ -178,6 +186,9 @@
         <p>${subscriptionNote()}</p><div class="gold-pop-remain">${ui("До конца подписки", "Subscription remaining", "До завершення підписки")} <b>${remaining()}</b></div>
         <button class="btn sm" data-page="account">${ui("Аккаунт", "Account", "Акаунт")}</button><button class="btn sm pri" data-page="subscriptions">${ui("Подписка", "Subscription", "Підписка")}</button></div>` : ""}
       </div>`;
+    const afterNav = root.querySelector('.gold-nav');
+    if (afterNav) afterNav.scrollTop = savedNavScroll;
+    refreshLiveMetrics();
   }
   render = renderGold;
   document.addEventListener("click", ev => {

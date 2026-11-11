@@ -16,6 +16,7 @@ from paths import resources, data
 import webview
 
 import winio
+import release_updater
 from backend import Backend, Hooks
 
 BASE = resources()
@@ -27,6 +28,8 @@ def main() -> int:
     hooks = Hooks()
     backend = Backend(DATA, winio.WinIO(), hooks)
     backend.version = (BASE / "VERSION").read_text(encoding="utf-8").strip()
+    if backend.release_mode:
+        release_updater.cleanup_update_cache(backend.version)
     main_win = None
     mini = {"w": None}
     maximized = {"value": False}
@@ -107,6 +110,8 @@ def main() -> int:
         if update_shutdown.wait(4):
             return
         while not update_shutdown.is_set():
+            if backend.release_mode:
+                backend.refresh_release_news()
             if backend.cfg.auto_update and (backend.release_mode or backend.cfg.update_url):
                 if backend.state()["update"]["status"] not in ("ready", "downloading", "installer_started"):
                     result = backend.update_check()
