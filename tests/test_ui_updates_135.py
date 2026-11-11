@@ -88,3 +88,25 @@ def test_installer_version_and_publish_scripts_consistent():
     assert f'#define AppVersion "{version}"' in (ROOT / "installer.iss").read_text(encoding="utf-8")
     assert f"v{version}" in (ROOT / "TAG_RELEASE.bat").read_text(encoding="utf-8")
     assert "Flags: nowait" in (ROOT / "installer.iss").read_text(encoding="utf-8")
+
+
+def test_github_release_api_uses_json_accept_header(monkeypatch):
+    """The news feed is JSON just like /releases/latest (HTTP 415 regression)."""
+    requests = []
+    def fake_urlopen(req, timeout=None):
+        requests.append(req)
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def read(self, n=-1):
+                return b"[]"
+        return Response()
+    monkeypatch.setattr(release_updater, "urlopen", fake_urlopen)
+    release_updater.release_news()
+    assert requests
+    assert requests[0].get_header("Accept") == "application/vnd.github+json"
+    assert requests[0].get_header("X-github-api-version") == "2022-11-28"
+    release_updater._urlopen("https://github.com/9akarena8-bit/easy-rewards/releases/download/v1.3.6/installer.exe")
+    assert requests[1].get_header("Accept") == "application/octet-stream"
