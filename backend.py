@@ -20,6 +20,7 @@ import updater
 import treasure
 import release_updater
 import subscription_preview
+import payment_hub
 import support_report
 import discord_notifications
 import webbrowser
@@ -69,6 +70,7 @@ class Backend:
         "tracker_reset", "update_check", "update_prepare", "update_install", "open_mini", "close_mini",
         "input_probe_delayed", "create_support_report", "open_support",
         "discord_configure", "discord_test", "discord_clear",
+        "payment_interest_create",
     )
 
     def __init__(self, base, io, hooks: Hooks | None = None):
@@ -87,6 +89,7 @@ class Backend:
         self._control_action = "none"
         self._control_time = ""
         self.reward_stats = RewardStats(self.base / "rewards.json")
+        self.payment_drafts = payment_hub.LocalInterestDrafts(self.base / "payment_interest_drafts.json")
         self.engine = Engine(self.cfg, io, self.templates_root, log=self.log,
                              on_reward=self.reward_stats.increment)
         self._shot: np.ndarray | None = None
@@ -123,6 +126,11 @@ class Backend:
         self._control_sequence += 1
         self._control_action = action
         self._control_time = time.strftime("%H:%M:%S")
+
+    def payment_interest_create(self, plan: str, method: str, game: str = "",
+                                skin_selection: dict | None = None) -> dict:
+        """Save a local, non-payable request. NEVER accept payment or grant access."""
+        return self.payment_drafts.create(plan, method, game, skin_selection)
 
     def create_support_report(self) -> dict:
         """User-triggered local diagnostic file. Never auto-upload or leak secrets."""
@@ -239,6 +247,8 @@ class Backend:
             "update": dict(self._upd),
             "release_news": list(self._release_news),
             "subscription": subscription_preview.snapshot(),
+            "payment_hub": {**payment_hub.catalog(),
+                            "drafts": self.payment_drafts.recent()},
             "treasure": trs,
         }
 
