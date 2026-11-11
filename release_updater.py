@@ -25,10 +25,19 @@ TIMEOUT_SECONDS = 25
 
 
 def _urlopen(url: str):
-    return urlopen(Request(url, headers={
-        "User-Agent": "EasyRewards-ReleaseUpdater/1.3.5",
-        "Accept": "application/vnd.github+json" if url == RELEASE_API else "application/octet-stream",
-    }), timeout=TIMEOUT_SECONDS)
+    # Both /releases/latest and /releases?per_page=N return JSON. Sending
+    # application/octet-stream to the release feed causes HTTP 415.
+    parsed = urlparse(url)
+    is_release_api = (parsed.scheme == "https"
+                      and parsed.hostname == "api.github.com"
+                      and parsed.path.startswith(f"/repos/{REPOSITORY}/releases"))
+    headers = {
+        "User-Agent": "EasyRewards-ReleaseUpdater/1.3.6",
+        "Accept": "application/vnd.github+json" if is_release_api else "application/octet-stream",
+    }
+    if is_release_api:
+        headers["X-GitHub-Api-Version"] = "2022-11-28"
+    return urlopen(Request(url, headers=headers), timeout=TIMEOUT_SECONDS)
 
 
 def _read_limited(url: str, limit: int) -> bytes:
