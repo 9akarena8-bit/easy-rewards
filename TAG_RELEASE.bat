@@ -15,7 +15,7 @@ if errorlevel 1 goto error
 cd /d "%TEMP_REPO%"
 for /f "usebackq delims=" %%v in ("VERSION") do set "VERS=%%v"
 if not "%VERS%"=="1.3.5" (echo Wrong version in main: %VERS%&goto error)
-git tag v1.3.5
+git tag v1.3.6
 if errorlevel 1 goto error
 git push origin v1.3.5
 if errorlevel 1 goto error
