@@ -119,9 +119,9 @@ def test_stop_doesnt_block_ui_during_slow_capture(tmp_path):
         start = time.monotonic()
         eng.stop()
         assert time.monotonic() - start < 0.9
-        assert eng.state == "stopping"
-        # Stop is requested but worker can't finish until capture releases.
-        assert eng.running
+        assert eng.state == "stopped"
+        # Screen processing runs in a daemon analysis worker and cannot block Stop.
+        assert not eng.running
     finally:
         io.release.set()
     eng._thread.join(timeout=2)
