@@ -18,7 +18,7 @@ const languageButton = l => `<button class="${ST.cfg.ui_language === l ? "on" : 
 
 async function init() {
   document.body.classList.toggle("mini", MINI);
-  ST = await api.state(); await loadStrings(); await tick(); setInterval(tick, 400);
+  ST = await api.state(); await loadStrings(); await tick(); setInterval(tick, 800);
 }
 async function loadStrings() { S = await api.strings(ST.cfg.ui_language); document.documentElement.lang = ST.cfg.ui_language; }
 async function tick() {
@@ -98,7 +98,7 @@ const PAGE = {
       <div class="control-buttons">
         <button class="start-square" data-act="start" ${e.running ? "disabled" : ""}><span>▶</span><strong>${t("btn.start")}</strong></button>
         <button class="btn control-stop" data-act="stop" ${!e.running ? "disabled" : ""}>■ &nbsp;${t("btn.stop")}</button>
-        <button class="btn control-pause" data-act="main" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} &nbsp;${e.paused ? t("btn.resume") : t("btn.pause")}</button>
+        <button class="btn control-pause" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} &nbsp;${e.paused ? t("btn.resume") : t("btn.pause")}</button>
       </div>
       <div class="control-footer"><button class="btn sm" data-act="reset">${t("btn.reset")}</button><small>${t("hotkeys")}</small></div></div>
     <div class="card stats-card"><h3>${t("home.session_stats")}</h3><div class="grid g4"><div class="stat"><b>${e.games}</b><span>${t("stat.games")}</span></div>
@@ -132,7 +132,7 @@ const PAGE = {
     <div class="row" style="margin-bottom:14px;flex-wrap:wrap">
       <button class="btn pri" data-act="start" ${e.running ? "disabled" : ""}>▶ ${t("btn.start")}</button>
       <button class="btn" data-act="stop" ${!e.running ? "disabled" : ""}>■ ${t("btn.stop")}</button>
-      <button class="btn" data-act="main" ${!e.running ? "disabled" : ""}>${e.paused ? t("btn.resume") : t("btn.pause")}</button>
+      <button class="btn" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? t("btn.resume") : t("btn.pause")}</button>
       <span class="badge">${t("afk.total")}: ${e.input_count}</span>
       <span class="badge">${t("afk.last")}: ${esc(e.last_input || "—")}</span>
     </div>
@@ -144,6 +144,7 @@ const PAGE = {
         (${esc(ST.diagnostics?.foreground_process || "—")})</p>
       ${e.wait_reason ? `<p class="focus-warn">${esc(t("afk.reason_" + e.wait_reason))}</p>` : ""}
       <div class="row" style="flex-wrap:wrap;gap:10px">
+        <button class="btn sm" data-act="focusgame" ${!ST.diagnostics?.game_found ? "disabled" : ""}>${t("afk.focus_button")}</button>
         <button class="btn sm pri" data-act="ptest" data-target="fortnite" ${e.running || e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_button")}</button>
         <button class="btn sm" data-act="ptest" data-target="notepad" ${e.running || e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_notepad")}</button>
         <span class="mute">${t("afk.probe_help")}</span>
@@ -326,6 +327,9 @@ document.addEventListener("click", async ev => {
   if (a === "ptest") { const r = await api.input_probe_delayed(d.target || "fortnite");
     toast(r.ok ? t("afk.probe_started") : t("afk.probe_stop_first")); return tick(); }
   if (a === "main") { const e = ST.engine; await (e.running ? api.pause() : api.start()); return tick(); }
+  if (a === "pause") { await api.pause(); return tick(); }
+  if (a === "focusgame") { const r = await api.focus_game_now();
+    toast(r.ok ? t("afk.focus_ok") : t("afk.focus_" + r.reason)); return tick(); }
   if (a === "stop") { await api.stop(); return tick(); }
   if (a === "reset") { await api.reset_stats(); return tick(); }
   if (a === "mini") return api.open_mini();
