@@ -146,9 +146,12 @@ const PAGE = {
       <p class="mute">${t("afk.weapon_note")}</p>
       <div class="warnbox">${t("afk.safety")}</div>
       <h3 style="margin-top:14px">${t("afk.replay_heading")}</h3>
+      ${f(t("afk.auto_yellow"), tog("afk_replay_auto_detect", c.afk_replay_auto_detect))}
       <p class="mute">${t("afk.replay_help")}</p>
-      <div class="row"><span class="badge">${t("afk.replay_count")}: ${ST.tpl_counts.replay || 0}</span><span class="badge">${t("afk.death_count")}: ${ST.tpl_counts.death || 0}</span></div>
-      <button class="btn sm" data-page="templates">${t("afk.capture")}</button>
+      <div class="row"><span class="badge">${t("afk.replay_clicks")}: ${e.replay_count || 0}</span><span class="badge">${t("afk.replay_count")}: ${ST.tpl_counts.replay || 0}</span></div>
+      <div class="row"><span class="badge">${t("afk.replay_state")}: ${t("replay." + (e.replay_status || "idle"))}</span></div>
+      ${e.wait_reason === "replay_unresponsive" ? `<div class="warnbox">${t("afk.replay_unresponsive")}</div>` : ""}
+      <button class="btn sm" data-act="replay_capture">${t("afk.capture_replay")}</button>
     </div></div>`;
   },
   tracker() {
@@ -311,6 +314,7 @@ document.addEventListener("click", async ev => {
   if (a === "exp") { const r = await api.tracker_export(); if (r.ok) toast(t("trk.exported", {path: r.path})); return; }
   if (a === "imp") { const r = await api.tracker_import(); if (r.ok) toast(t("trk.imported")); else if (r.error !== "cancelled") toast(t("trk.import_failed")); return tick(); }
   if (a === "rst") { if (confirm(t("trk.confirm_reset"))) { await api.tracker_reset(); tick(); } return; }
+  if (a === "replay_capture") { tplRole = "replay"; tplName = "play_again"; page = "templates"; tplList = await api.templates(); render(true); return; }
   if (a === "cap") { box = null; toast(t("tpl.capture_wait", {s: 5})); const r = await api.capture_screenshot(5); if (r.ok) { shot = r; render(true); } return; }
   if (a === "cancelshot") { shot = null; box = null; return render(true); }
   if (a === "saveshot") { if (!box) return; const r = await api.save_template(tplRole, tplName || "button", box.fx, box.fy, box.fw, box.fh);

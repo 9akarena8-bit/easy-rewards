@@ -39,7 +39,7 @@ class GameIO:
 def test_no_templates_sends_key_without_grabbing_screen():
     with tempfile.TemporaryDirectory() as directory:
         io = GameIO()
-        engine = Engine(Config(afk_enabled=True, auto_focus=False), io, Path(directory),
+        engine = Engine(Config(afk_enabled=True, afk_replay_auto_detect=False, auto_focus=False), io, Path(directory),
                         log=lambda *a, **k: None)
         engine._next_afk = 0
         engine._tick()

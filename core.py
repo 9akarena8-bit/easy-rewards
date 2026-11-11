@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 
 from i18n import tr
+from replay_detect import yellow_replay_button
 
 # Template file names are "<role>_<anything>.png".
 #   start_*  : button that begins the next match (counts a game)
@@ -59,6 +60,7 @@ class Config:
     afk_pause_min: float = 0.5
     afk_pause_max: float = 2.0
     afk_camera_pixels_360: float = 1500.0  # calibrate for player's game sensitivity
+    afk_replay_auto_detect: bool = True  # conservative yellow-button detection, no OCR
 
 
     @classmethod
@@ -181,6 +183,21 @@ class Engine:
         self.probe_at = ""
         self.probe_target = ""
         self._probe_lock = threading.Lock()
+        self._next_focus_attempt = 0.0
+        self.focus_result = ""
+        self._restart_pending = False
+        self.replay_count = 0
+        self.replay_source = ""
+        self.replay_attempts = 0
+        self.replay_status = "idle"
+        self._replay_candidate_hits = 0
+        self._replay_candidate_pos: tuple[int, int] | None = None
+        self._replay_pending = False
+        self._replay_absent_frames = 0
+        self._replay_missing_frames = 0
+        self._death_latched = False
+        self._replay_clicked_at = 0.0
+        self._replay_last_attempt = 0.0
 
     # ---- public controls (thread safe)
     @property
@@ -204,7 +221,11 @@ class Engine:
 
     def start(self) -> None:
         if self.running:
-            if self.paused and not self._stop.is_set():
+            if self._stop.is_set():
+                # F7 immediately after F8 is queued, not silently discarded.
+                self._restart_pending = True
+                self.log("log.restart_queued")
+            elif self.paused:
                 self.toggle_pause()
             return
         n = self.reload_templates()
@@ -226,6 +247,17 @@ class Engine:
         self._reward_visible = False
         self._reward_absent_since = None
         self._awaiting_replay = False
+        self._replay_pending = False
+        self._replay_candidate_hits = 0
+        self._replay_candidate_pos = None
+        self._replay_absent_frames = 0
+        self._replay_missing_frames = 0
+        self._death_latched = False
+        self.replay_attempts = 0
+        self.replay_status = "idle"
+        self._next_focus_attempt = 0.0
+        self.focus_result = ""
+        self._restart_pending = False
         self._thread = threading.Thread(target=self._loop, name="engine", daemon=True)
         self._thread.start()
 
@@ -237,10 +269,12 @@ class Engine:
         concurrent worker during this phase is forbidden.
         """
         thread = self._thread
+        self._restart_pending = False
         if thread is None or not thread.is_alive():
             self.state = "stopped"
             return
         self._stop.set()
+        self._restart_pending = False
         self.state = "stopping"
         if thread is threading.current_thread():
             return
@@ -551,15 +585,63 @@ class Engine:
             self.state = "stopped"
             self.wait_reason = ""
             self.log("log.stopped")
+            if self._restart_pending:
+                # Wait for the old worker to *fully* exit before starting a new one.
+                old_thread = threading.current_thread()
+                threading.Thread(target=self._restart_after, args=(old_thread,),
+                                 name="engine-restart", daemon=True).start()
+
+    def _restart_after(self, old_thread: threading.Thread) -> None:
+        old_thread.join(timeout=20)
+        if not old_thread.is_alive() and self._restart_pending:
+            self._restart_pending = False
+            self.start()
+
+    def _record_replay_click(self, position: tuple[int, int], now: float, source: str) -> bool:
+        """Click only the replay candidate, with a strict foreground re-check."""
+        if self._stop.is_set() or self._paused.is_set() or not self.io.game_in_foreground():
+            self.state = "waiting_window"
+            return False
+        x, y = position
+        self.io.click(x, y)
+        self._last_click = now
+        self._replay_last_attempt = now
+        self.replay_attempts += 1
+        self.replay_source = source
+        self._replay_pending = True
+        self._awaiting_replay = False
+        self._death_latched = False
+        self._replay_missing_frames = 0
+        self._replay_absent_frames = 0
+        if self.replay_attempts == 1:
+            self._replay_clicked_at = now
+            self.replay_count += 1
+            self.games += 1
+            self.game_times.append(time.time())
+            self._in_match = False  # not in a match until the button disappears
+            self._result_seen = False
+        self.state = "loading"
+        self.replay_status = "clicked"
+        self._next_afk = now + 8.0
+        self.log("log.replay_clicked", source=source, attempt=self.replay_attempts)
+        return True
 
     def _tick(self) -> None:
         if self._stop.is_set() or self._paused.is_set():
             return
         cfg = self.cfg
-        if (cfg.require_foreground or cfg.afk_sequence_enabled) and not self.io.game_in_foreground():
-            if cfg.auto_focus and not self._stop.is_set():
-                self.io.focus_game()
-                self._stop.wait(0.1)
+        foreground_required = cfg.require_foreground or cfg.afk_sequence_enabled
+        if foreground_required and not self.io.game_in_foreground():
+            now = time.monotonic()
+            # Do not constantly steal focus while the user is in the launcher.
+            if cfg.auto_focus and now >= self._next_focus_attempt and not self._stop.is_set():
+                self._next_focus_attempt = now + 7.0
+                try:
+                    result = self.io.focus_game()
+                    self.focus_result = "focused" if self.io.game_in_foreground() else "denied"
+                except Exception as exc:
+                    self.focus_result = "error: " + str(exc)
+                self._stop.wait(.08)
             if not self.io.game_in_foreground():
                 found = self.io.game_window_found() if hasattr(self.io, "game_window_found") else False
                 self.wait_reason = "not_foreground" if found else "not_found"
@@ -567,24 +649,25 @@ class Engine:
                 self.score = 0.0
                 return
         self.wait_reason = ""
-
-        if not self.templates:
+        has_templates = bool(self.templates)
+        scan_yellow = bool(cfg.afk_enabled and cfg.afk_replay_auto_detect)
+        if not has_templates and not scan_yellow:
             if not cfg.afk_enabled:
                 self.state = "afk_disabled"
                 self.wait_reason = "afk_disabled"
                 return
-            # New installations have no button images: don't waste time and CPU
-            # capturing the screen just to perform a simple keyboard action.
             self.state = "afk_only"
-            now = time.monotonic()
-            self._run_afk_if_due(now)
+            self._run_afk_if_due(time.monotonic())
             return
-
+        if not hasattr(self.io, "grab"):
+            # Some test/external IO adapters have keyboard support but no screen capture.
+            self.state = "afk_only"
+            self._run_afk_if_due(time.monotonic())
+            return
         frame = self.io.grab()
         if self._stop.is_set() or self._paused.is_set():
             return
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if has_templates else None
         best = None
         reward_match = None
         replay_match = None
@@ -608,27 +691,100 @@ class Engine:
                 best = match
         if self._stop.is_set() or self._paused.is_set():
             return
-        # Explicit death and replay templates outrank other incidental matches.
-        if death_match and death_match[0] >= cfg.threshold:
-            self._awaiting_replay = True
-        if replay_match and replay_match[0] >= cfg.threshold:
-            best = replay_match
-        elif self._awaiting_replay:
-            self.state = "await_replay"
-            self._next_afk = time.monotonic() + self._afk_wait()
-            self.score = death_match[0] if death_match else 0.0
-            return
-        self.score = max(0.0, best[0] if best else (reward_match[0] if reward_match else 0.0))
-
         now = time.monotonic()
+        # A saved replay template takes precedence; the yellow-button shape is
+        # a conservative built-in fallback with 3-frame confirmation.
+        replay_position = None
+        replay_source = ""
+        replay_score = 0.0
+        if replay_match and replay_match[0] >= cfg.threshold:
+            replay_position, replay_score, replay_source = replay_match[1], replay_match[0], "template"
+        elif scan_yellow:
+            found = yellow_replay_button(frame)
+            if found is not None:
+                replay_score, replay_position = found
+                replay_source = "yellow"
+        death_visible = bool(death_match and death_match[0] >= cfg.threshold)
+        self.score = max(0.0, replay_score, best[0] if best else 0.0)
+
+        # After clicking replay, hold all anti-AFK inputs until we actually
+        # leave the results screen and a short loading period has elapsed.
+        if self._replay_pending:
+            if replay_position is not None:
+                self._replay_absent_frames = 0
+                if now - self._replay_last_attempt >= 6.0:
+                    if self.replay_attempts < 3:
+                        self._record_replay_click(replay_position, now, replay_source)
+                    else:
+                        self.replay_status = "unresponsive"
+                        self.wait_reason = "replay_unresponsive"
+                        self.state = "await_replay"
+                else:
+                    self.state = "loading"
+            else:
+                self._replay_absent_frames += 1
+                if self._replay_absent_frames >= 2 and not death_visible and now - self._replay_clicked_at >= 6.0:
+                    self._replay_pending = False
+                    self.replay_attempts = 0
+                    self.replay_status = "resumed"
+                    self._in_match = True
+                    self.state = "in_match"
+                    self._next_afk = now + .5
+                    self.log("log.replay_resumed")
+                else:
+                    self.state = "loading"
+            return
+
+        # The right-side yellow button can be recognised without the '#5'
+        # position text and without a manually saved image.
+        if replay_position is not None:
+            self._awaiting_replay = True
+            self._replay_missing_frames = 0
+            self._in_match = False
+            self._next_afk = now + 1.0
+            self.replay_status = "seen"
+            if self._replay_candidate_pos is not None and \
+               abs(replay_position[0]-self._replay_candidate_pos[0]) < max(25, frame.shape[1] * .04) and \
+               abs(replay_position[1]-self._replay_candidate_pos[1]) < max(20, frame.shape[0] * .04):
+                self._replay_candidate_hits += 1
+            else:
+                self._replay_candidate_hits = 1
+            self._replay_candidate_pos = replay_position
+            # A user-captured replay template is exact; colour-only detection
+            # requires confirmation on 3 consecutive frames.
+            confirmation = 1 if replay_source == "template" else 3
+            if self._replay_candidate_hits < confirmation or now - self._last_click < cfg.click_delay:
+                self.state = "await_replay"
+                return
+            self._record_replay_click(replay_position, now, replay_source)
+            return
+        self._replay_candidate_hits = 0
+        self._replay_candidate_pos = None
+        if death_visible:
+            self._awaiting_replay = True
+            self._death_latched = True
+            self._in_match = False
+            self.replay_status = "death"
+        if self._awaiting_replay:
+            # A single false positive yellow rectangle should not freeze AFK
+            # forever. An explicit death template, however, holds the latch.
+            if not self._death_latched:
+                self._replay_missing_frames += 1
+                if self._replay_missing_frames >= 3:
+                    self._awaiting_replay = False
+                    self.replay_status = "idle"
+            if self._awaiting_replay:
+                self.state = "await_replay"
+                self._next_afk = now + 1.0
+                return
+
         reward_visible = self._scan_reward(reward_match, now)
         if best and best[0] >= cfg.threshold and best[2].role == "wait":
-            self.state = "loading"  # loading / connecting screen: wait quietly
+            self.state = "loading"
             self._next_afk = now + self._afk_wait()
             return
         if best and best[0] >= cfg.threshold:
-            # If focus changes during image matching, never click a different app.
-            if (cfg.require_foreground or cfg.afk_sequence_enabled) and not self.io.game_in_foreground():
+            if foreground_required and not self.io.game_in_foreground():
                 self.state = "waiting_window"
                 return
             if now - self._last_click < cfg.click_delay:
@@ -640,8 +796,7 @@ class Engine:
             self._last_click = now
             self._next_afk = now + self._afk_wait()
             tpl = best[2]
-            if tpl.role in ("start", "replay"):
-                self._awaiting_replay = False
+            if tpl.role == "start":
                 self.games += 1
                 self.game_times.append(time.time())
                 self._in_match = True
@@ -656,11 +811,9 @@ class Engine:
                 self.state = "results"
             self.log("log.clicked", name=tpl.name, score=f"{best[0]:.2f}", x=x, y=y)
             return
-
         if reward_visible:
             self.state = "reward_visible"
             self._next_afk = now + self._afk_wait()
             return
-        # no known button on screen -> we are in a match (or somewhere unknown)
-        self.state = "in_match" if self._in_match else "idle"
+        self.state = "in_match" if self._in_match else ("afk_only" if cfg.afk_enabled and not has_templates else "idle")
         self._run_afk_if_due(now)
