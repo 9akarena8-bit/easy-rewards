@@ -1,0 +1,49 @@
+name: Beta quality checks
+
+# Development branches run tests automatically. This workflow never publishes
+# a GitHub Release, so customer installations keep using the last Stable tag.
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'fix/**'
+      - 'automation/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Python tests and frontend checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-ui.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-ui.txt pytest
+      - name: Check Python syntax
+        run: |
+          python -m compileall -q app.py app_classic.py backend.py core.py i18n.py updater.py release_updater.py replay_detect.py webapp.py winio.py tests
+      - name: Run regression tests
+        run: python -m pytest -q
+      - name: Check JavaScript syntax
+        run: |
+          node --check ui/app.js
+          node --check ui/gold_ui.js
