@@ -59,7 +59,7 @@ class Hooks:
 
 class Backend:
     API = (
-        "state", "strings", "start", "stop", "pause", "reset_stats", "set_config",
+        "state", "strings", "start", "stop", "pause", "focus_game_now", "reset_stats", "set_config",
         "templates", "delete_template", "capture_screenshot", "save_template", "test_templates",
         "counter_add", "counter_set", "counter_edit", "counter_new", "counter_delete", "tokens_add",
         "prize_add", "prize_toggle", "prize_delete", "tracker_set", "tracker_export", "tracker_import",
@@ -213,6 +213,19 @@ class Backend:
 
     def pause(self) -> None:
         self.engine.toggle_pause()
+
+    def focus_game_now(self) -> dict:
+        """Switch only to a verified Fortnite window, if Windows permits it."""
+        try:
+            if not hasattr(self.io, "game_window_found") or not self.io.game_window_found():
+                self.engine.focus_result = "not_found"
+                return {"ok": False, "reason": "not_found"}
+            focused = bool(self.io.game_in_foreground() or self.io.focus_game())
+            self.engine.focus_result = "focused" if focused else "denied"
+            return {"ok": focused, "reason": "focused" if focused else "denied"}
+        except Exception as exc:
+            self.engine.focus_result = "error: " + repr(exc)
+            return {"ok": False, "reason": "error", "detail": repr(exc)}
 
     def reset_stats(self) -> None:
         self.engine.reset_stats()
