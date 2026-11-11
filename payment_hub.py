@@ -132,7 +132,8 @@ class LocalInterestDrafts:
                  "created_at": str(d.get("created_at", ""))[:45],
                  "status": "draft_only"} for d in self._read()[-8:][::-1]]
 
-    def create(self, plan: str, method: str, game: str = "") -> dict:
+    def create(self, plan: str, method: str, game: str = "",
+               skin_selection: dict | None = None) -> dict:
         if plan not in PLAN_IDS or method not in METHOD_BY_ID:
             return {"ok": False, "error": "invalid_plan_or_method"}
         if method == "steam_items":
@@ -140,10 +141,36 @@ class LocalInterestDrafts:
                 return {"ok": False, "error": "invalid_game"}
         elif game:
             return {"ok": False, "error": "unexpected_game"}
+        # A user-entered skin basket is only a private planning note.
+        # It is NOT a real inventory quote, Steam trade or verified price.
+        basket = None
+        if skin_selection is not None:
+            if method != "steam_items" or not isinstance(skin_selection, dict):
+                return {"ok": False, "error": "invalid_skin_selection"}
+            raw = skin_selection.get("items")
+            target = skin_selection.get("target_kopeks")
+            if not isinstance(raw, list) or len(raw) > 16 or type(target) not in (int, type(None)):
+                return {"ok": False, "error": "invalid_skin_selection"}
+            if target is not None and not 1 <= target <= 100000000:
+                return {"ok": False, "error": "invalid_skin_selection"}
+            safe_items = []
+            for item in raw:
+                if not isinstance(item, dict):
+                    return {"ok": False, "error": "invalid_skin_selection"}
+                title, estimate = item.get("name"), item.get("estimate_kopeks")
+                if (not isinstance(title, str) or not 1 <= len(title.strip()) <= 100
+                        or type(estimate) is not int or not 1 <= estimate <= 100000000):
+                    return {"ok": False, "error": "invalid_skin_selection"}
+                safe_items.append({"name": title.strip(), "estimate_kopeks": estimate})
+            basket = {"game": game, "items": safe_items,
+                      "target_kopeks": target,
+                      "verified": False, "market_quote": False}
         record = {"id": secrets.token_hex(6),
                   "plan": plan, "method": method, "game": game,
                   "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                   "status": "draft_only"}
+        if basket is not None:
+            record["skin_basket"] = basket
         current = self._read()
         current.append(record)
         try:
