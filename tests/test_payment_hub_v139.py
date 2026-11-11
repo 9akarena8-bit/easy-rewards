@@ -109,3 +109,37 @@ def test_web_ui_mentions_non_payable_drafts_and_no_real_checkout():
     assert 'api.payment_interest_create' in js
     assert 't("payments.not_live")' in js
     assert 't("payments.draft_warning")' in js
+
+
+def test_locally_saved_skinpay_basket_is_unverified_and_bounded(tmp_path):
+    b = Backend(tmp_path, OfflineIO())
+    selection = {
+        "target_kopeks": 50000,
+        "items": [
+            {"name": "Dota 2 item", "estimate_kopeks": 30000},
+            {"name": "Another item", "estimate_kopeks": 20000},
+        ],
+    }
+    result = b.payment_interest_create("week", "steam_items", "dota2", selection)
+    assert result["ok"]
+    stored = json.loads((tmp_path / "payment_interest_drafts.json").read_text(encoding="utf-8"))
+    basket = stored[-1]["skin_basket"]
+    assert basket["verified"] is False and basket["market_quote"] is False
+    assert basket["target_kopeks"] == 50000
+    assert len(basket["items"]) == 2
+    assert b.state()["subscription"]["activation_enabled"] is False
+
+
+def test_malformed_skinpay_baskets_rejected(tmp_path):
+    b = Backend(tmp_path, OfflineIO())
+    invalid = [
+        {"items": "not a list", "target_kopeks": 100},
+        {"items": [], "target_kopeks": True},
+        {"items": [{"name": "", "estimate_kopeks": 100}], "target_kopeks": None},
+        {"items": [{"name": "Any", "estimate_kopeks": 10.5}], "target_kopeks": None},
+        {"items": [{"name": "Any", "estimate_kopeks": 500}] * 17, "target_kopeks": None},
+    ]
+    for basket in invalid:
+        assert b.payment_interest_create("day", "steam_items", "rust", basket)["ok"] is False
+    assert b.payment_interest_create("day", "sbp", "", {"items": []})["ok"] is False
+    assert not (tmp_path / "payment_interest_drafts.json").exists()
