@@ -95,7 +95,7 @@
     ["home", "⌂", "nav.home"], ["afk", "↝", "nav.afk"], ["tracker", "◈", "nav.tracker"],
     ["templates", "▣", "nav.templates"], ["updates", "▤", "nav.updates"],
     ["subscriptions", "♛", "nav.subscriptions"], ["settings", "⚙", "nav.settings"],
-    ["account", "◉", "nav.account"], ["guide", "?", "nav.guide"]);
+    ["support", "⚑", "nav.support"], ["account", "◉", "nav.account"], ["guide", "?", "nav.guide"]);
   PAGE.home = function() {
     const e = ST.engine, hist = Array.isArray(e.history) ? e.history : [], max = Math.max(1, ...hist.map(x => x.games + x.cycles));
     const guide = ST.guide || {}, todo = !guide.dismissed && !(guide.c1 && guide.c2 && guide.c3);
