@@ -1,5 +1,6 @@
 """Easy Rewards launcher: modern window if pywebview/WebView2 works, otherwise the classic Tk window."""
 import sys
+from paths import data
 
 
 def main() -> int:
@@ -17,7 +18,7 @@ def main() -> int:
             except Exception:
                 import traceback
                 from pathlib import Path
-                Path(__file__).with_name("crash.log").write_text(traceback.format_exc(), encoding="utf-8")
+                (data() / "crash.log").write_text(traceback.format_exc(), encoding="utf-8")
                 print("New window failed (see crash.log), starting the classic window.")
     import app_classic
     return app_classic.main()

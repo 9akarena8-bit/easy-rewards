@@ -15,11 +15,14 @@ import traceback
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
+from paths import resources, data
 from tkinter import messagebox
 
 import cv2
 
 import updater
+import treasure
+from reward_stats import RewardStats
 from core import Config, Engine, ROLES, best_match, load_templates
 from i18n import tr
 
@@ -30,12 +33,14 @@ except ImportError:
         raise  # a missing package (e.g. Pillow) - let the real error show up
     WinIO = HotkeyPoller = None  # not Windows
 
-BASE = Path(__file__).resolve().parent
-CONFIG_PATH = BASE / "config.json"
-TEMPLATES = BASE / "templates"
+BASE = resources()
+DATA = data()
+CONFIG_PATH = DATA / "config.json"
+TEMPLATES = DATA / "templates"
 ASSETS = BASE / "assets"
 FONT = "Segoe UI"
-CRASH_LOG = BASE / "crash.log"
+FONT_HEAD = "Arial Black"
+CRASH_LOG = DATA / "crash.log"
 
 
 def write_crash(exc_type, exc, tb) -> str:
@@ -49,14 +54,14 @@ def write_crash(exc_type, exc, tb) -> str:
 
 # Soft pastel palettes (warm light / dusky dark - no pure black or white glare).
 PALETTES = {
-    "light": dict(bg="#fbf7f2", side="#f5eee5", card="#ffffff", card_border="#f0e7db",
-                  fg="#3d3548", muted="#8f8799", accent="#f4b968", accent_hover="#efa94f",
-                  accent_fg="#4a3213", soft="#f6efe6", soft_hover="#ede2d4", field="#faf5ee",
-                  ok="#72c593", warn="#f2b45c", off="#d4cbd9"),
-    "dark": dict(bg="#1f1d29", side="#262434", card="#2d2b3c", card_border="#393650",
-                 fg="#ece8f4", muted="#9d97af", accent="#f3c27e", accent_hover="#f8cf93",
-                 accent_fg="#2f2310", soft="#383551", soft_hover="#434060", field="#242232",
-                 ok="#82d3a3", warn="#f3c27e", off="#5c586f"),
+    "light": dict(bg="#f3f0ea", side="#ece8e0", card="#fffdfa", card_border="#d9d1c2",
+                  fg="#282722", muted="#746e64", accent="#c4a167", accent_hover="#d7b57d",
+                  accent_fg="#241c10", soft="#f6f3ed", soft_hover="#e5ded1", field="#f7f4ef",
+                  ok="#80a789", warn="#ba9559", off="#c8c2b9"),
+    "dark": dict(bg="#0d0f12", side="#121417", card="#191b20", card_border="#35322d",
+                 fg="#f3f0e9", muted="#aba59b", accent="#c6a66d", accent_hover="#d6b983",
+                 accent_fg="#181610", soft="#222327", soft_hover="#313033", field="#16181d",
+                 ok="#9fb99b", warn="#c6a66d", off="#4e4e4f"),
 }
 
 
@@ -215,8 +220,8 @@ class Segmented(Frm):
 class Toggle(tk.Canvas):
     def __init__(self, parent, app, variable, surface="card"):
         self.app, self.var, self.surface = app, variable, surface
-        self._w, self._h = app.px(46), app.px(26)
-        super().__init__(parent, width=self._w, height=self._h, highlightthickness=0, bd=0, cursor="hand2")
+        self.canvas_width, self.canvas_height = app.px(46), app.px(26)
+        super().__init__(parent, width=self.canvas_width, height=self.canvas_height, highlightthickness=0, bd=0, cursor="hand2")
         self.bind("<Button-1>", lambda e: self.var.set(not self.var.get()))
         self.var.trace_add("write", lambda *a: self._draw())
         app.reg(self)
@@ -228,7 +233,7 @@ class Toggle(tk.Canvas):
     def _draw(self):
         c, on = self.app.c, bool(self.var.get())
         self.delete("all")
-        w, h = self._w, self._h
+        w, h = self.canvas_width, self.canvas_height
         rrect(self, 1, 1, w - 1, h - 1, h / 2, fill=c["accent"] if on else c["off"], outline="")
         r = h / 2 - self.app.px(4)
         cx = w - h / 2 if on else h / 2
@@ -238,8 +243,8 @@ class Toggle(tk.Canvas):
 class Slider(tk.Canvas):
     def __init__(self, parent, app, variable, lo, hi, surface="card", width=170):
         self.app, self.var, self.lo, self.hi, self.surface = app, variable, lo, hi, surface
-        self._w, self._h = app.px(width), app.px(28)
-        super().__init__(parent, width=self._w, height=self._h, highlightthickness=0, bd=0, cursor="hand2")
+        self.canvas_width, self.canvas_height = app.px(width), app.px(28)
+        super().__init__(parent, width=self.canvas_width, height=self.canvas_height, highlightthickness=0, bd=0, cursor="hand2")
         self.bind("<Button-1>", self._drag)
         self.bind("<B1-Motion>", self._drag)
         self.var.trace_add("write", lambda *a: self._draw())
@@ -247,7 +252,7 @@ class Slider(tk.Canvas):
 
     def _drag(self, e):
         pad = self.app.px(12)
-        t = min(1.0, max(0.0, (e.x - pad) / max(1, self._w - 2 * pad)))
+        t = min(1.0, max(0.0, (e.x - pad) / max(1, self.canvas_width - 2 * pad)))
         self.var.set(round(self.lo + t * (self.hi - self.lo), 2))
 
     def restyle(self):
@@ -257,7 +262,7 @@ class Slider(tk.Canvas):
     def _draw(self):
         c = self.app.c
         self.delete("all")
-        pad, h, w = self.app.px(12), self._h, self._w
+        pad, h, w = self.app.px(12), self.canvas_height, self.canvas_width
         t = (float(self.var.get()) - self.lo) / (self.hi - self.lo)
         x = pad + t * (w - 2 * pad)
         th = self.app.px(3)
@@ -370,7 +375,9 @@ class App(tk.Tk):
         self.c = PALETTES.get(self.cfg.theme, PALETTES["light"])
         self.widgets: list = []
         self.logq: "queue.Queue[tuple]" = queue.Queue()
-        self.engine = Engine(self.cfg, self.io, TEMPLATES, log=self._log)
+        self.reward_stats = RewardStats(DATA / "rewards.json")
+        self.engine = Engine(self.cfg, self.io, TEMPLATES, log=self._log,
+                             on_reward=self.reward_stats.increment)
         self._tpl_names: list[str] = []
         self.restart_requested = False
         self.pending_update: dict | None = None
@@ -392,7 +399,7 @@ class App(tk.Tk):
                           "F10": self.engine.toggle_pause}).start()
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.after(250, self._tick)
-        if self.cfg.auto_update and self.cfg.update_url:
+        if not getattr(sys, "frozen", False) and self.cfg.auto_update and self.cfg.update_url:
             self.after(4000, lambda: self.check_updates(auto=True))
 
     # ---- helpers
@@ -400,7 +407,7 @@ class App(tk.Tk):
         return int(round(n * self.scale))
 
     def font(self, size=10, bold=False):
-        return (FONT, size, "bold") if bold else (FONT, size)
+        return (FONT_HEAD, size, "bold") if bold else (FONT, size)
 
     def tr(self, key, **kw) -> str:
         return tr(self.cfg.ui_language, key, **kw)
@@ -525,10 +532,10 @@ class App(tk.Tk):
 
         tiles = Frm(b, self, s)
         tiles.pack(fill="x", pady=(16, 16))
-        for i in range(3):
+        for i in range(4):
             tiles.columnconfigure(i, weight=1, uniform="tiles")
         self.vals: dict[str, Lbl] = {}
-        for i, key in enumerate(("stat.games", "stat.cycles", "stat.time")):
+        for i, key in enumerate(("stat.games", "stat.cycles", "stat.rewards", "stat.time")):
             tile = Card(tiles, self, surface=s, fill="soft", radius=16, pad=14)
             tile.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 10, 0))
             Lbl(tile.body, self, key=key, kind="muted", size=9, surface="soft").pack(anchor="w")
@@ -547,6 +554,10 @@ class App(tk.Tk):
         Pill(row, self, key="btn.reset", kind="soft", surface=s, command=self.engine.reset_stats).pack(
             side="left", padx=8)
 
+        trc = Card(p, self)
+        trc.pack(fill="x", pady=(0, 14))
+        self.lbl_treasure = Lbl(trc.body, self, text="", size=10, bold=True, surface=trc.surf)
+        self.lbl_treasure.pack(anchor="w")
         logc = Card(p, self, fixed=True)
         logc.pack(fill="both", expand=True)
         Lbl(logc.body, self, key="log.title", size=11, bold=True, surface=logc.surf).pack(anchor="w", pady=(0, 8))
@@ -853,12 +864,28 @@ class App(tk.Tk):
     def _log(self, key: str, **kw) -> None:
         self.logq.put((time.strftime("%H:%M:%S"), key, kw))
 
+    def _tick_treasure(self) -> None:
+        ts = treasure.treasure_state(DATA / "treasure.json")
+        if ts["active"]:
+            self.lbl_treasure.kind = "ok"
+            txt = self.tr("treasure.active", m=ts["pirate_mult"],
+                          odds=format(ts["pirate_odds"], ",").replace(",", " "))
+        elif ts["next"]:
+            self.lbl_treasure.kind = "warn"
+            txt = self.tr("treasure.next", cd=ts["next"]["countdown"]["text"])
+        else:
+            self.lbl_treasure.kind = "muted"
+            txt = self.tr("treasure.none")
+        self.lbl_treasure.configure(text=txt, fg=self.c[self.lbl_treasure.kind])
+
     def _tick(self) -> None:
+        self._tick_treasure()
         e = self.engine
         self.lbl_state.configure(text=self.tr("state." + e.state))
         self.lbl_match.configure(text=f"{self.tr('stat.match')}  {e.score:.2f}")
         self.vals["stat.games"].configure(text=str(e.games))
         self.vals["stat.cycles"].configure(text=str(e.cycles))
+        self.vals["stat.rewards"].configure(text=str(e.rewards))
         sec = int(e.runtime)
         self.vals["stat.time"].configure(text=f"{sec // 3600}:{sec % 3600 // 60:02d}:{sec % 60:02d}")
         self.dot.set_color("warn" if e.paused else "ok" if e.running else "off")

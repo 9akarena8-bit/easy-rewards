@@ -7,6 +7,7 @@ the screen/keyboard layer (`io`) is injected.
 from __future__ import annotations
 
 import base64
+import sys
 import collections
 import threading
 import time
@@ -16,9 +17,12 @@ import cv2
 import numpy as np
 
 import updater
+import treasure
+import release_updater
 from core import ROLES, Config, Engine, best_match, imread_unicode, load_templates
 from i18n import LANGS, STRINGS
 from tracker import Tracker
+from reward_stats import RewardStats
 
 NUM_LIMITS = {          # key: (type, lo, hi)
     "threshold": (float, 0.30, 0.99),
@@ -27,13 +31,13 @@ NUM_LIMITS = {          # key: (type, lo, hi)
     "afk_interval": (float, 1.0, 120.0),
     "afk_hold": (float, 0.1, 10.0),
 }
-BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guide_dismissed")
+BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
         "theme": ("light", "dark"), "ui_language": LANGS}
 SHOT_MAX_W = 1600
 
 
-def _safe_name(name: str) -> str:
+def safe_name(name: str) -> str:
     return "".join(ch for ch in str(name) if ch.isalnum() or ch in "-_")[:40] or "button"
 
 
@@ -66,9 +70,13 @@ class Backend:
         self.tracker = Tracker(self.base / "tracker.json")
         self._log: collections.deque = collections.deque(maxlen=80)
         self._log_n = 0
-        self.engine = Engine(self.cfg, io, self.templates_root, log=self.log)
+        self.reward_stats = RewardStats(self.base / "rewards.json")
+        self.engine = Engine(self.cfg, io, self.templates_root, log=self.log,
+                             on_reward=self.reward_stats.increment)
         self._shot: np.ndarray | None = None
         self._manifest: dict | None = None
+        self._release_manifest: dict | None = None
+        self.release_mode = bool(getattr(sys, "frozen", False))
         self._upd = {"status": "idle", "version": "", "notes": "", "error": ""}
         self._lock = threading.Lock()
         self.restart_requested = False
@@ -112,16 +120,42 @@ class Backend:
                     counts[role] += 1
         return counts
 
+    def _treasure(self) -> dict:
+        trs = treasure.treasure_state(self.base / "treasure.json")
+        prev = getattr(self, "_tr_active", None)
+        if trs["active"] and self.cfg.treasure_auto_boost and prev is not True:
+            self.tracker.set_options({"boost": trs["pirate_mult"]})
+        if prev is not None and trs["active"] != prev:
+            if trs["active"]:
+                self.log("log.treasure_start", m=trs["pirate_mult"], odds=trs["pirate_odds"])
+            else:
+                self.log("log.treasure_end")
+                if self.cfg.treasure_auto_boost:
+                    self.tracker.set_options({"boost": 1.0})
+        self._tr_active = trs["active"]
+        return trs
+
     def state(self) -> dict:
         e = self.engine
         counts = self._template_counts()
         t = self.tracker
+        trs = self._treasure()
         return {
             "version": self.version,
+            "release_mode": self.release_mode,
             "cfg": {k: getattr(self.cfg, k) for k in Config.__dataclass_fields__},
             "engine": {"state": e.state, "running": e.running, "paused": e.paused, "score": round(e.score, 3),
-                       "games": e.games, "cycles": e.cycles, "runtime": int(e.runtime),
-                       "history": self._history()},
+                       "games": e.games, "cycles": e.cycles, "rewards": e.rewards, "runtime": int(e.runtime),
+                       "history": self._history(),
+                       "input_count": e.input_count, "last_input": e.last_input,
+                       "input_error": e.last_input_error},
+            "reward": {"session": e.rewards, "total": self.reward_stats.total},
+            "diagnostics": {
+                "foreground_title": (self.io.foreground_title() if hasattr(self.io, "foreground_title") else ""),
+                "game_active": bool(self.io.game_in_foreground()),
+                "game_title": str(getattr(self.io, "window_title", "Fortnite")),
+                "template_count": len(e.templates),
+            },
             "tpl_counts": counts,
             "guide": {"c1": counts["start"] > 0, "c2": counts["result"] > 0,
                       "c3": (e.games + e.cycles) > 0, "dismissed": bool(self.cfg.guide_dismissed)},
@@ -130,6 +164,7 @@ class Backend:
             "luck": t.luck(),
             "week": t.week_info(),
             "update": dict(self._upd),
+            "treasure": trs,
         }
 
     # ------------------------------------------------------------ engine controls
@@ -196,7 +231,7 @@ class Backend:
         return out
 
     def delete_template(self, name: str) -> bool:
-        p = self.templates_root / self.cfg.language / f"{_safe_name(name)}.png"
+        p = self.templates_root / self.cfg.language / f"{safe_name(name)}.png"
         if p.is_file():
             p.unlink()
             return True
@@ -234,7 +269,7 @@ class Backend:
         if x2 - x < 8 or y2 - y < 8:
             return {"ok": False, "error": "small"}
         crop = self._shot[y:y2, x:x2]
-        path = self.templates_root / self.cfg.language / f"{role}_{_safe_name(name)}.png"
+        path = self.templates_root / self.cfg.language / f"{role}_{safe_name(name)}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
         ok, buf = cv2.imencode(".png", crop)
         if not ok:
@@ -322,6 +357,19 @@ class Backend:
 
     # ------------------------------------------------------------ updates
     def update_check(self, url: str | None = None) -> dict:
+        if self.release_mode:
+            self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
+            self._release_manifest = None
+            try:
+                self._release_manifest = release_updater.latest_release(self.version)
+                if self._release_manifest is None:
+                    self._upd = {"status": "latest", "version": self.version, "notes": "", "error": ""}
+                else:
+                    self._upd = {"status": "available", "version": self._release_manifest["version"],
+                                 "notes": self._release_manifest.get("notes", ""), "error": ""}
+            except Exception as exc:
+                self._upd = {"status": "error", "version": "", "notes": "", "error": str(exc)}
+            return dict(self._upd)
         url = (url if url is not None else self.cfg.update_url).strip()
         if not url:
             self._upd = {"status": "need_url", "version": "", "notes": "", "error": ""}
@@ -346,6 +394,22 @@ class Backend:
         return self._upd
 
     def update_install(self) -> dict:
+        if self.release_mode:
+            meta = self._release_manifest
+            if meta is None:
+                return {"status": "error", "version": "", "notes": "",
+                        "error": "No verified GitHub release has been selected"}
+            self._upd = {"status": "downloading", "version": meta["version"], "notes": "", "error": ""}
+            try:
+                installer = release_updater.download_installer(meta)
+                release_updater.launch_installer(installer)
+                self._release_manifest = None
+                self._upd = {"status": "installer_started", "version": meta["version"],
+                             "notes": "", "error": ""}
+            except Exception as exc:
+                self._upd = {"status": "error", "version": meta["version"],
+                             "notes": "", "error": str(exc)}
+            return dict(self._upd)
         if not self._manifest:
             return {"status": "error", "version": "", "notes": "", "error": "nothing to install"}
         try:

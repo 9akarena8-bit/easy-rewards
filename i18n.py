@@ -5,6 +5,13 @@ LANGS = ("ru", "en", "uk")
 
 STRINGS: dict[str, dict[str, str]] = {
     "en": {
+        "state.afk_only": "Movement only (no button templates)",
+        "diag.heading": "Connection and input", "diag.game": "Fortnite window",
+        "diag.active": "Active", "diag.inactive": "Not active",
+        "diag.foreground": "Foreground window", "diag.none": "Not detected",
+        "diag.inputs": "Input events sent",
+        "diag.focus_hint": "Waiting for Fortnite. Switch to the game, then check this panel. F7 starts the engine but it won't press keys in other windows.",
+        "diag.afk_only": "No button templates: the app only sends movement keys and cannot automatically enter matches yet.",
         "nav.home": "Home", "nav.settings": "Settings", "nav.afk": "Anti-AFK", "nav.templates": "Templates",
         "home.title": "Overview", "home.subtitle": "Set up the game and control the run.",
         "btn.start": "Start", "btn.pause": "Pause", "btn.resume": "Resume", "btn.stop": "Stop",
@@ -138,8 +145,21 @@ STRINGS: dict[str, dict[str, str]] = {
         "guide.c2": "Capture a Result button",
         "guide.c3": "Run your first match",
         "guide.open": "Open the full guide",
+        "treasure.active": "Treasure Hour: Pirate Token ×{m} — odds 1 in {odds} per chest",
+        "treasure.next": "Next Treasure Hour in {cd}",
+        "treasure.none": "Treasure Hours: no scheduled events",
+        "set.treasure_auto_boost": "Sync tracker boost with Treasure Hours",
+        "log.treasure_start": "Treasure Hour started: ×{m}, odds 1 in {odds}",
+        "log.treasure_end": "Treasure Hour ended, boost back to 1.0",
     },
     "ru": {
+        "state.afk_only": "Только движение (без шаблонов кнопок)",
+        "diag.heading": "Подключение и ввод", "diag.game": "Окно Fortnite",
+        "diag.active": "Активно", "diag.inactive": "Не активно",
+        "diag.foreground": "Активное окно", "diag.none": "Не обнаружено",
+        "diag.inputs": "Отправлено нажатий",
+        "diag.focus_hint": "Ожидание окна Fortnite. Переключись в игру и проверь эту панель. F7 запускает движок, но в чужих окнах нажатий не будет.",
+        "diag.afk_only": "Шаблоны кнопок ещё не добавлены: программа выполняет только нажатия клавиш и пока не умеет самостоятельно входить в матчи.",
         "nav.home": "Главная", "nav.settings": "Настройки", "nav.afk": "Анти-АФК", "nav.templates": "Шаблоны",
         "home.title": "Обзор", "home.subtitle": "Настройте игру и управляйте запуском.",
         "btn.start": "Запустить", "btn.pause": "Пауза", "btn.resume": "Продолжить", "btn.stop": "Стоп",
@@ -278,8 +298,21 @@ STRINGS: dict[str, dict[str, str]] = {
         "guide.c2": "Снять кнопку «Результат»",
         "guide.c3": "Запустить первый матч",
         "guide.open": "Открыть полный гайд",
+        "treasure.active": "Час сокровищ: токен пирата ×{m} — шанс 1 к {odds} за сундук",
+        "treasure.next": "Следующий час сокровищ через {cd}",
+        "treasure.none": "Часы сокровищ: запланированных событий нет",
+        "set.treasure_auto_boost": "Синхронизировать усиление трекера с часами сокровищ",
+        "log.treasure_start": "Начался час сокровищ: ×{m}, шанс 1 к {odds}",
+        "log.treasure_end": "Час сокровищ закончился, усиление снова 1.0",
     },
     "uk": {
+        "state.afk_only": "Лише рух (без шаблонів кнопок)",
+        "diag.heading": "З'єднання та введення", "diag.game": "Вікно Fortnite",
+        "diag.active": "Активне", "diag.inactive": "Неактивне",
+        "diag.foreground": "Активне вікно", "diag.none": "Не знайдено",
+        "diag.inputs": "Надіслано натискань",
+        "diag.focus_hint": "Очікування вікна Fortnite. Перейдіть у гру й перевірте цю панель. F7 запускає рушій, але не натискає клавіші в інших вікнах.",
+        "diag.afk_only": "Шаблонів кнопок ще немає: програма надсилає лише клавіші руху й поки не вміє самостійно входити в матчі.",
         "nav.home": "Головна", "nav.settings": "Налаштування", "nav.afk": "Анти-АФК", "nav.templates": "Шаблони",
         "home.title": "Огляд", "home.subtitle": "Налаштуйте гру та керуйте запуском.",
         "btn.start": "Запустити", "btn.pause": "Пауза", "btn.resume": "Продовжити", "btn.stop": "Стоп",
@@ -418,8 +451,50 @@ STRINGS: dict[str, dict[str, str]] = {
         "guide.c2": "Зняти кнопку «Результат»",
         "guide.c3": "Запустити перший матч",
         "guide.open": "Відкрити повний гайд",
+        "treasure.active": "Година скарбів: піратський токен ×{m} — шанс 1 до {odds} за скриню",
+        "treasure.next": "Наступна година скарбів за {cd}",
+        "treasure.none": "Години скарбів: запланованих подій немає",
+        "set.treasure_auto_boost": "Синхронізувати підсилення трекера з годинами скарбів",
+        "log.treasure_start": "Почалася година скарбів: ×{m}, шанс 1 до {odds}",
+        "log.treasure_end": "Година скарбів завершилася, підсилення знову 1.0",
     },
 }
+
+# New UI keys: reward screen detection, session counter, and optional extra inputs.
+_NEW = {
+    "en": {
+        "stat.rewards": "Rewards detected", "stat.total_rewards": "All sessions",
+        "tpl.role_reward": "Reward popup (count only)",
+        "log.reward_detected": "Reward popup detected: {name} (session total {n})",
+        "state.reward_visible": "Reward popup detected",
+        "afk.extra": "Extra inputs (jump/click/item switch) - optional",
+        "home.reward_note": "Counted only if you capture a reward popup template. Counts may be imperfect.",
+        "home.reward_heading": "Rewards observed", "home.session": "THIS SESSION", "home.all_time": "ALL SESSIONS",
+        "home.overview": "LIVE DASHBOARD", "home.status": "SESSION CONTROL", "home.session_stats": "RUN STATISTICS",
+    },
+    "ru": {
+        "stat.rewards": "Награды", "stat.total_rewards": "За всё время",
+        "tpl.role_reward": "Уведомление о награде (счётчик)",
+        "log.reward_detected": "Обнаружена награда: {name} (за сессию {n})",
+        "state.reward_visible": "Обнаружено уведомление о награде",
+        "afk.extra": "Доп. действия (прыжок/клик/смена слота) — по желанию",
+        "home.reward_note": "Счётчик работает после сохранения шаблона награды. Возможны ошибки распознавания.",
+        "home.reward_heading": "Замеченные награды", "home.session": "ЗА СЕССИЮ", "home.all_time": "ЗА ВСЁ ВРЕМЯ",
+        "home.overview": "ПАНЕЛЬ УПРАВЛЕНИЯ", "home.status": "УПРАВЛЕНИЕ СЕССИЕЙ", "home.session_stats": "СТАТИСТИКА ЗАПУСКА",
+    },
+    "uk": {
+        "stat.rewards": "Нагороди", "stat.total_rewards": "За весь час",
+        "tpl.role_reward": "Сповіщення про нагороду (лічильник)",
+        "log.reward_detected": "Виявлено нагороду: {name} (за сеанс {n})",
+        "state.reward_visible": "Виявлено сповіщення про нагороду",
+        "afk.extra": "Додаткові дії (стрибок/клік/зміна слота) — за бажанням",
+        "home.reward_note": "Лічильник працює після збереження шаблону нагороди. Можливі помилки розпізнавання.",
+        "home.reward_heading": "Помічені нагороди", "home.session": "ЗА СЕАНС", "home.all_time": "ЗА ВЕСЬ ЧАС",
+        "home.overview": "ПАНЕЛЬ КЕРУВАННЯ", "home.status": "КЕРУВАННЯ СЕАНСОМ", "home.session_stats": "СТАТИСТИКА ЗАПУСКУ",
+    },
+}
+for _lang, _changes in _NEW.items():
+    STRINGS[_lang].update(_changes)
 
 
 def tr(lang: str, key: str, /, **kw) -> str:
@@ -428,3 +503,20 @@ def tr(lang: str, key: str, /, **kw) -> str:
         return text.format(**kw) if kw else text
     except (KeyError, IndexError):
         return text
+
+# Running AFK without captured buttons is a supported mode.
+STRINGS["ru"]["log.afk_only"] = "Шаблонов ещё нет: запущен режим движения Anti-AFK без распознавания кнопок."
+STRINGS["en"]["log.afk_only"] = "No templates yet: movement-only anti-AFK mode started."
+STRINGS["uk"]["log.afk_only"] = "Шаблонів ще немає: запущено режим руху Anti-AFK без розпізнавання кнопок."
+
+
+# v1.2.4: fully localized names and optional update banner.
+STRINGS['ru'].update({'lang.ru': 'Русский', 'lang.en': 'Английский', 'lang.uk': 'Украинский', 'lang.short_ru': 'Рус', 'lang.short_en': 'Англ', 'lang.short_uk': 'UA', 'trk.luck_invalid': 'Множитель должен быть от 0,1 до 100, а базовый шанс — целым положительным числом.', 'trk.luck_saved': 'Настройки удачи сохранены, автоматическая смена множителя отключена.', 'upd.banner_title': 'Доступно обновление v{v}', 'upd.banner_subtitle': 'Нажмите «Обновить», чтобы установить новую версию и перезапустить приложение.', 'upd.later': 'Позже', 'upd.downloading': 'Скачивание и проверка обновления…', 'upd.installer_started': 'Установщик запущен. Приложение закроется.', 'set.treasure_auto_boost': 'Автоматически изменять множитель во время ивента'})
+STRINGS['en'].update({'lang.ru': 'Russian', 'lang.en': 'English', 'lang.uk': 'Ukrainian', 'lang.short_ru': 'Rus', 'lang.short_en': 'Eng', 'lang.short_uk': 'UA', 'trk.luck_invalid': 'Boost must be 0.1 to 100; base odds must be a positive integer.', 'trk.luck_saved': 'Luck settings saved; automatic boost changes are now disabled.', 'upd.banner_title': 'Update v{v} available', 'upd.banner_subtitle': 'Install this version, then restart Easy Rewards.', 'upd.later': 'Later', 'upd.downloading': 'Downloading and verifying update…', 'upd.installer_started': 'Installer launched. The app will close.', 'set.treasure_auto_boost': 'Automatically change boost during Treasure Hours'})
+STRINGS['uk'].update({'lang.ru': 'Російська', 'lang.en': 'Англійська', 'lang.uk': 'Українська', 'lang.short_ru': 'Рос', 'lang.short_en': 'Англ', 'lang.short_uk': 'UA', 'trk.luck_invalid': 'Множник має бути від 0,1 до 100, а базовий шанс — додатним цілим числом.', 'trk.luck_saved': 'Налаштування збережено; автоматичну зміну множника вимкнено.', 'upd.banner_title': 'Доступне оновлення v{v}', 'upd.banner_subtitle': 'Установіть нову версію й перезапустіть Easy Rewards.', 'upd.later': 'Пізніше', 'upd.downloading': 'Завантаження та перевірка оновлення…', 'upd.installer_started': 'Інсталятор запущено. Програму буде закрито.', 'set.treasure_auto_boost': 'Автоматично змінювати множник під час події'})
+
+
+# v1.2.4 compact dashboard additions
+STRINGS['ru'].update({'home.chart_hint': '6 столбиков по 10 минут: сколько запусков матчей и завершений за час', 'home.chart_bucket': 'Интервал {n} из 6: событий {c}', 'diag.afk_only': 'Режим движения работает. Для автоматического входа в матч пока нужно добавить образец кнопки в разделе «Шаблоны».', 'diag.focus_hint': 'Ожидание Fortnite: управление работает только когда окно игры активно.', 'upd.auto': 'Проверять обновления при запуске', 'upd.warn': 'Обновление устанавливается только после вашего подтверждения. Данные пользователя сохраняются.'})
+STRINGS['en'].update({'home.chart_hint': '6 bars of 10 minutes: matches started and completed in the past hour', 'home.chart_bucket': 'Interval {n} of 6: {c} events', 'diag.afk_only': 'Movement mode is available. To enter a match automatically, capture the Play button in Templates for now.', 'diag.focus_hint': 'Waiting for Fortnite: input is enabled only when the game window is active.', 'upd.auto': 'Check for updates at launch', 'upd.warn': 'Updates run only after your confirmation. User data is preserved.'})
+STRINGS['uk'].update({'home.chart_hint': '6 стовпчиків по 10 хвилин: запуски та завершення матчів за годину', 'home.chart_bucket': 'Інтервал {n} із 6: подій {c}', 'diag.afk_only': 'Режим руху працює. Для автоматичного входу в матч поки додайте зразок кнопки «Грати» у вкладці «Шаблони».', 'diag.focus_hint': 'Очікування Fortnite: керування працює лише за активного вікна гри.', 'upd.auto': 'Перевіряти оновлення під час запуску', 'upd.warn': 'Оновлення запускається тільки після вашого підтвердження. Дані користувача зберігаються.'})

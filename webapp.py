@@ -1,4 +1,8 @@
-"""pywebview shell: native window around ui/index.html, plus the always-on-top mini window."""
+"""Native pywebview shell for Easy Rewards.
+
+Windows 10/11: WebView2 is preferred. The frontend shows a descriptive error
+instead of a blank window if the JS/Python bridge never becomes ready.
+"""
 from __future__ import annotations
 
 import os
@@ -7,34 +11,67 @@ import sys
 import threading
 import time
 from pathlib import Path
+from paths import resources, data
 
-import webview  # pip install pywebview  (needs Microsoft WebView2, present on Windows 10/11)
+import webview
 
 import winio
 from backend import Backend, Hooks
 
-BASE = Path(__file__).resolve().parent
+BASE = resources()
+DATA = data()
 UI = BASE / "ui" / "index.html"
 
 
 def main() -> int:
     hooks = Hooks()
-    backend = Backend(BASE, winio.WinIO(), hooks)
+    backend = Backend(DATA, winio.WinIO(), hooks)
+    backend.version = (BASE / "VERSION").read_text(encoding="utf-8").strip()
+    main_win = None
+    mini = {"w": None}
+    maximized = {"value": False}
 
     class JsApi:
-        pass
+        """Typed Python API for the frontend; backend methods are attached below."""
+
+        def window_minimize(self):
+            if main_win is not None:
+                main_win.minimize()
+
+        def window_maximize(self):
+            if main_win is None:
+                return
+            if maximized["value"]:
+                main_win.restore()
+            else:
+                main_win.maximize()
+            maximized["value"] = not maximized["value"]
+
+        def window_close(self):
+            if main_win is not None:
+                main_win.destroy()
+
     for name in Backend.API:
         setattr(JsApi, name, (lambda n: lambda self, *a: getattr(backend, n)(*a))(name))
 
-    main_win = webview.create_window("Easy Rewards", UI.as_uri(), js_api=JsApi(), width=1180, height=760,
-                                     min_size=(900, 600))
-    mini = {"w": None}
+    # Win10 has no default rounded window chrome. Frameless mode lets the HTML
+    # draw a compact title bar and softly rounded *inner* corners. Keep the
+    # background opaque: pywebview doesn't support transparent Windows views.
+    main_win = webview.create_window(
+        "Easy Rewards", UI.as_uri(),
+        js_api=JsApi(), width=1180, height=760,
+        min_size=(900, 600), frameless=True, easy_drag=False,
+        shadow=True, background_color="#08090b",
+    )
 
     def open_mini():
         if mini["w"] is not None:
             return
-        mini["w"] = webview.create_window("Easy Rewards", UI.as_uri() + "?mini=1", js_api=JsApi(), width=300,
-                                          height=250, on_top=True, resizable=False)
+        mini["w"] = webview.create_window(
+            "Easy Rewards — Mini", UI.as_uri() + "?mini=1", js_api=JsApi(),
+            width=300, height=250, on_top=True, resizable=False,
+            background_color="#0c0d10",
+        )
         mini["w"].events.closed += lambda: mini.update(w=None)
 
     def close_mini():
@@ -43,27 +80,37 @@ def main() -> int:
 
     def save_dialog(name):
         r = main_win.create_file_dialog(webview.SAVE_DIALOG, save_filename=name)
-        return (r if isinstance(r, str) else (r[0] if r else None))
+        return r if isinstance(r, str) else (r[0] if r else None)
 
     def open_dialog():
         r = main_win.create_file_dialog(webview.OPEN_DIALOG)
         return r[0] if r else None
 
-    hooks.before_capture, hooks.after_capture = main_win.minimize, main_win.restore
-    hooks.open_mini, hooks.close_mini, hooks.save_dialog, hooks.open_dialog = open_mini, close_mini, save_dialog, open_dialog
+    hooks.before_capture = main_win.minimize
+    hooks.after_capture = main_win.restore
+    hooks.open_mini = open_mini
+    hooks.close_mini = close_mini
+    hooks.save_dialog = save_dialog
+    hooks.open_dialog = open_dialog
 
-    winio.HotkeyPoller({"F7": backend.engine.start, "F8": backend.engine.stop,
-                        "F9": backend.hotkey_count, "F10": backend.engine.toggle_pause}).start()
+    winio.HotkeyPoller({
+        "F7": backend.engine.start,
+        "F8": backend.engine.stop,
+        "F9": backend.hotkey_count,
+        "F10": backend.engine.toggle_pause,
+    }).start()
 
     def auto_update():
         time.sleep(4)
-        if backend.cfg.auto_update and backend.cfg.update_url:
-            if backend.update_check()["status"] == "available":
-                backend.update_install()
-    threading.Thread(target=auto_update, daemon=True).start()
+        if backend.cfg.auto_update and (backend.release_mode or backend.cfg.update_url):
+            backend.update_check()
 
-    webview.start()
-    backend.shutdown()
+    threading.Thread(target=auto_update, daemon=True).start()
+    try:
+        webview.start()
+    finally:
+        backend.shutdown()
+
     if backend.restart_requested:
         if os.environ.get("EASY_REWARDS_LAUNCHER"):
             return 42
