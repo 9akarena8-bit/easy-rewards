@@ -190,3 +190,10 @@ body.mini #app{height:100vh;min-height:0;width:100%;margin:0;border:0;border-rad
 /* Keep the four session statistics readable in 1180px Windows windows. */
 .stats-card .stat b{font-size:18px;white-space:nowrap;letter-spacing:-.045em}
 .stats-card .g4{gap:7px}
+
+/* v1.3.2 / subscriptions preview */
+.sub-remaining{font-size:36px;line-height:1.25;color:var(--acc);font-weight:700;margin:14px 0 3px}
+.subs-grid .card{min-height:165px;display:flex;flex-direction:column;gap:12px}
+.subs-grid .card h3{margin:0;font-size:19px}
+.subs-grid .card .row{margin-top:auto}
+.subs-grid button[disabled]{cursor:not-allowed;opacity:.48}

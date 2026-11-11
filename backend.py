@@ -19,6 +19,7 @@ import numpy as np
 import updater
 import treasure
 import release_updater
+import subscription_preview
 from core import ROLES, Config, Engine, best_match, imread_unicode, load_templates
 from i18n import LANGS, STRINGS
 from tracker import Tracker
@@ -62,7 +63,7 @@ class Backend:
         "templates", "delete_template", "capture_screenshot", "save_template", "test_templates",
         "counter_add", "counter_set", "counter_edit", "counter_new", "counter_delete", "tokens_add",
         "prize_add", "prize_toggle", "prize_delete", "tracker_set", "tracker_export", "tracker_import",
-        "tracker_reset", "update_check", "update_install", "open_mini", "close_mini",
+        "tracker_reset", "update_check", "update_prepare", "update_install", "open_mini", "close_mini",
     )
 
     def __init__(self, base, io, hooks: Hooks | None = None):
@@ -83,6 +84,8 @@ class Backend:
         self._release_manifest: dict | None = None
         self.release_mode = bool(getattr(sys, "frozen", False))
         self._upd = {"status": "idle", "version": "", "notes": "", "error": ""}
+        self._verified_installer: Path | None = None
+        self._update_lock = threading.RLock()
         self._lock = threading.Lock()
         self.restart_requested = False
         self.version = updater.local_version(self.base)
@@ -169,6 +172,7 @@ class Backend:
             "luck": t.luck(),
             "week": t.week_info(),
             "update": dict(self._upd),
+            "subscription": subscription_preview.snapshot(),
             "treasure": trs,
         }
 
@@ -368,70 +372,116 @@ class Backend:
 
     # ------------------------------------------------------------ updates
     def update_check(self, url: str | None = None) -> dict:
+        """Check releases without triggering an installation.
+
+        The locking prevents the 5-minute background poll from racing a click
+        to exit-and-update or a cached-installer download.
+        """
         if self.release_mode:
-            self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
-            self._release_manifest = None
-            try:
-                self._release_manifest = release_updater.latest_release(self.version)
-                if self._release_manifest is None:
-                    self._upd = {"status": "latest", "version": self.version, "notes": "", "error": ""}
-                else:
-                    self._upd = {"status": "available", "version": self._release_manifest["version"],
-                                 "notes": self._release_manifest.get("notes", ""), "error": ""}
-            except Exception as exc:
-                self._upd = {"status": "error", "version": "", "notes": "", "error": str(exc)}
-            return dict(self._upd)
+            with self._update_lock:
+                if self._upd["status"] in ("ready", "downloading", "installer_started"):
+                    return dict(self._upd)
+                self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
+                self._release_manifest = None
+                try:
+                    self._release_manifest = release_updater.latest_release(self.version)
+                    if self._release_manifest is None:
+                        self._upd = {"status": "latest", "version": self.version, "notes": "", "error": ""}
+                    else:
+                        self._upd = {"status": "available", "version": self._release_manifest["version"],
+                                     "notes": self._release_manifest.get("notes", ""), "error": ""}
+                except Exception as exc:
+                    self._upd = {"status": "error", "version": "", "notes": "", "error": str(exc)}
+                return dict(self._upd)
         url = (url if url is not None else self.cfg.update_url).strip()
         if not url:
             self._upd = {"status": "need_url", "version": "", "notes": "", "error": ""}
-            return self._upd
+            return dict(self._upd)
         if url != self.cfg.update_url:
             res = self.set_config({"update_url": url})
             if not res["ok"]:
                 self._upd = {"status": "error", "version": "", "notes": "", "error": "https"}
-                return self._upd
+                return dict(self._upd)
         self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
         try:
             version, manifest = updater.check(self.base, url)
-        except Exception as exc:  # network, JSON, validation
+        except Exception as exc:
             self._upd = {"status": "error", "version": "", "notes": "", "error": str(exc)}
-            return self._upd
+            return dict(self._upd)
         self._manifest = manifest
         if manifest is None:
             self._upd = {"status": "latest", "version": self.version, "notes": "", "error": ""}
         else:
             self._upd = {"status": "available", "version": version, "notes": str(manifest.get("notes", "")),
                          "error": ""}
-        return self._upd
+        return dict(self._upd)
+
+    def update_prepare(self) -> dict:
+        """Download and SHA-256 verify an installer, but NEVER execute it.
+
+        Called only from the background release watcher after explicit opt-in
+        via auto_update. Safe to run while a game is active.
+        """
+        if not self.release_mode:
+            return dict(self._upd)
+        with self._update_lock:
+            meta = self._release_manifest
+            if meta is None or self._upd.get("status") == "installer_started":
+                return dict(self._upd)
+            if self._verified_installer and release_updater.verify_installer(meta, self._verified_installer):
+                self._upd = {"status": "ready", "version": meta["version"],
+                             "notes": meta.get("notes", ""), "error": ""}
+                return dict(self._upd)
+            self._upd = {"status": "downloading", "version": meta["version"],
+                         "notes": meta.get("notes", ""), "error": ""}
+            try:
+                self._verified_installer = release_updater.download_installer(meta)
+                self._upd["status"] = "ready"
+            except Exception as exc:
+                self._verified_installer = None
+                self._upd = {"status": "error", "version": meta["version"],
+                             "notes": meta.get("notes", ""), "error": str(exc)}
+            return dict(self._upd)
 
     def update_install(self) -> dict:
+        """User-initiated install: stop engine, verify installer, open wizard."""
         if self.release_mode:
-            meta = self._release_manifest
-            if meta is None:
-                return {"status": "error", "version": "", "notes": "",
-                        "error": "No verified GitHub release has been selected"}
-            self._upd = {"status": "downloading", "version": meta["version"], "notes": "", "error": ""}
-            try:
-                installer = release_updater.download_installer(meta)
-                release_updater.launch_installer(installer)
-                self._release_manifest = None
-                self._upd = {"status": "installer_started", "version": meta["version"],
-                             "notes": "", "error": ""}
-            except Exception as exc:
-                self._upd = {"status": "error", "version": meta["version"],
-                             "notes": "", "error": str(exc)}
-            return dict(self._upd)
+            with self._update_lock:
+                meta = self._release_manifest
+                if meta is None:
+                    return {"status": "error", "version": "", "notes": "",
+                            "error": "No verified GitHub release has been selected"}
+                if self.engine.running:
+                    self.engine.stop()
+                    if self.engine.running:
+                        return {"status": "error", "version": meta["version"], "notes": "",
+                                "error": "Stop the running session before updating"}
+                self._upd = {"status": "downloading", "version": meta["version"], "notes": "", "error": ""}
+                try:
+                    installer = self._verified_installer
+                    if not installer or not release_updater.verify_installer(meta, installer):
+                        installer = release_updater.download_installer(meta)
+                    # Only release_updater.launch_installer runs the installer.
+                    release_updater.launch_installer(installer)
+                    self._verified_installer = None
+                    self._release_manifest = None
+                    self._upd = {"status": "installer_started", "version": meta["version"],
+                                 "notes": "", "error": ""}
+                except Exception as exc:
+                    self._upd = {"status": "error", "version": meta["version"],
+                                 "notes": "", "error": str(exc)}
+                return dict(self._upd)
         if not self._manifest:
             return {"status": "error", "version": "", "notes": "", "error": "nothing to install"}
         try:
             version = updater.install(self.base, self._manifest)
         except Exception as exc:
             self._upd = {"status": "error", "version": "", "notes": "", "error": str(exc)}
-            return self._upd
+            return dict(self._upd)
         self._manifest = None
         self._upd = {"status": "installed", "version": str(version), "notes": "", "error": ""}
         self.restart_requested = True
-        return self._upd
+        return dict(self._upd)
 
     # ------------------------------------------------------------ mini window
     def open_mini(self) -> bool:
