@@ -84,7 +84,7 @@ def test_cleanup_only_removes_downloads_up_to_current_version(monkeypatch, tmp_p
 
 def test_installer_version_and_publish_scripts_consistent():
     version = (ROOT / "VERSION").read_text().strip()
-    assert version == "1.3.5"
+    assert version == "1.3.6"
     assert f'#define AppVersion "{version}"' in (ROOT / "installer.iss").read_text(encoding="utf-8")
     assert f"v{version}" in (ROOT / "TAG_RELEASE.bat").read_text(encoding="utf-8")
     assert "Flags: nowait" in (ROOT / "installer.iss").read_text(encoding="utf-8")
