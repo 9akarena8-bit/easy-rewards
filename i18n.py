@@ -759,3 +759,53 @@ STRINGS["uk"].update({"state.capture_waiting": "Перевірка екрана 
 STRINGS["ru"]["afk.last_control"] = "Последняя полученная Python команда"
 STRINGS["en"]["afk.last_control"] = "Last command received by Python"
 STRINGS["uk"]["afk.last_control"] = "Остання отримана Python команда"
+
+# v1.3.8: local, user-reviewed support reports; no automatic uploading.
+STRINGS["ru"].update({
+    "nav.support": "Поддержка",
+    "support.title": "Поддержка и репорт",
+    "support.intro": "Если возникла ошибка, создай отчёт и отправь его в поддержку. Он сохранится на твоём компьютере.",
+    "support.create_report": "Создать отчёт",
+    "support.github": "Сообщить об ошибке (GitHub)",
+    "support.contacts_notice": "Telegram и Discord появятся, когда разработчик добавит официальные контакты.",
+    "support.privacy": "Логи не отправляются автоматически. Проверь отчёт перед отправкой.",
+    "support.report": "Диагностический отчёт",
+    "support.saved": "Файл сохранён",
+    "support.empty": "Здесь появится текст отчёта после нажатия кнопки.",
+    "support.copy": "Скопировать текст",
+    "support.copied": "Отчёт скопирован",
+    "support.select_copy": "Текст выделен. Нажми Ctrl+C для копирования.",
+    "support.failed": "Не удалось выполнить действие",
+})
+STRINGS["en"].update({
+    "nav.support": "Support",
+    "support.title": "Support and bug report",
+    "support.intro": "If something fails, create a report and send it to support. It stays on your computer.",
+    "support.create_report": "Create report",
+    "support.github": "Report a bug (GitHub)",
+    "support.contacts_notice": "Telegram and Discord buttons will activate after the developer sets official contacts.",
+    "support.privacy": "Logs are never uploaded automatically. Review the report before sharing.",
+    "support.report": "Diagnostic report",
+    "support.saved": "Saved file",
+    "support.empty": "The diagnostic report will appear here.",
+    "support.copy": "Copy text",
+    "support.copied": "Report copied",
+    "support.select_copy": "Text selected. Press Ctrl+C to copy.",
+    "support.failed": "Action failed",
+})
+STRINGS["uk"].update({
+    "nav.support": "Підтримка",
+    "support.title": "Підтримка та скарги",
+    "support.intro": "Якщо сталася помилка, створи звіт і надішли його в підтримку. Він залишиться на твоєму комп'ютері.",
+    "support.create_report": "Створити звіт",
+    "support.github": "Повідомити про помилку (GitHub)",
+    "support.contacts_notice": "Telegram і Discord з'являться після додавання офіційних контактів.",
+    "support.privacy": "Логи не надсилаються автоматично. Перевір звіт перед відправленням.",
+    "support.report": "Діагностичний звіт",
+    "support.saved": "Файл збережено",
+    "support.empty": "Тут з'явиться текст звіту після натискання кнопки.",
+    "support.copy": "Скопіювати текст",
+    "support.copied": "Звіт скопійовано",
+    "support.select_copy": "Текст виділено. Натисни Ctrl+C.",
+    "support.failed": "Не вдалося виконати дію",
+})
