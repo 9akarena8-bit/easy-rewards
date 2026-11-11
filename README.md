@@ -1,57 +1,48 @@
-# Easy Rewards
+# Easy Rewards 1.2.4
 
-A soft-looking Windows panel that watches the screen with OpenCV template matching, clicks the buttons
-you teach it (start next match, continue, claim all, back to lobby) and sends random W/A/S/D holds
-(anti-AFK) while no known button is visible.
+Windows 10/11 desktop app for screen button templates, configurable key sequences, and manual Treasure Log tracking. Independent community project, not affiliated with Epic Games. Automated play can violate game rules, and Windows SendInput does not guarantee Fortnite will accept input.
 
-- Interface languages: **Русский / English / Українська** (switch in the sidebar, applies instantly)
-- **Light and dark** themes (sidebar), both soft pastel
-- Hotkeys: **F7** start, **F8** stop, **F10** pause / resume
+## Что нового в 1.2.4
 
-## How to run (Windows)
-1. Unzip the folder anywhere (not inside the zip viewer).
-2. **Double-click `run.bat`.** It finds Python 3.10+, creates a private environment, installs what is
-   needed (first start takes a minute or two) and opens the app. Later starts are instant.
-   - "Python was not found": install it from https://www.python.org/downloads/windows/ - tick
-     **Add python.exe to PATH** and keep **tcl/tk** ticked - then double-click `run.bat` again.
-   - If the app closes with an error, the window stays open and the details are saved in `crash.log`.
-3. Optional: `run.bat --cli` runs without a window (F7 / F8 / F10 still work).
+- Оригинальное изображение пиратского токена теперь используется в иконке, в заголовке и внутри программы.
+- Убрано название «Gold Edition». Строгий тёмный интерфейс с приглушённым золотом.
+- Переключение языков 🇷🇺 Рус / 🇬🇧 Англ / 🇺🇦 UA; в настройках полные названия языков на выбранном языке. Внутри настройки украинского используется правильный языковой код `uk` (не код страны `UA`), чтобы не ломать существующие данные.
+- Компактный квадратный «Запустить», отдельные «Стоп» и «Пауза/Продолжить», сброс статистики снизу. Текущий статус и кнопка гайда справа сверху; столбцы статистики — шесть интервалов по 10 минут.
+- В Treasure Log можно ввести свой множитель от 0.1 до 100 и исходный шанс. Сохранение значения отключает автоматическую смену множителя по таймеру; переключатель можно вернуть в настройках.
+- Поддержка обновлений установленной EXE-программы через GitHub Releases: проверка при старте, уведомление, кнопка установки, SHA-256 проверка скачанного установщика.
+- Подготовлена Windows-сборка через GitHub Actions: при отправке тега `v1.2.4` создаётся установщик и GitHub Release с `.sha256`.
+- Обновление не запускается без вашего нажатия. Хранилище настроек и статистики остаётся в `%LOCALAPPDATA%\EasyRewards`.
 
-## Automatic updates (game-style: only changed files are downloaded)
-The app updates itself from an https folder that you control.
-1. After changing the code, run `python tools/make_release.py 1.1.1 "what changed"`. It writes `dist/`:
-   `version.json` (a list of every file with its SHA-256), a `files/` copy of the program and a full zip.
-2. Upload the **whole `dist/` folder** to one https address, e.g. GitHub Pages
-   (`https://<you>.github.io/<repo>/version.json`) or any static host.
-3. In the app open **Updates**, paste the address of `version.json`, keep "Check and install on start" on.
-Each start the app compares the list with the files on disk, downloads **only the files that differ**
-(a code tweak is a few KB), verifies every checksum, then swaps them in, deletes files that were removed
-and restarts. Nothing is replaced unless every download verified. `config.json` and `templates/` are never
-touched; replaced files are copied to `_backup/<version>/`. Python packages (OpenCV etc.) are not part of
-updates - `run.bat` only installs them again if `requirements.txt` changes.
-An update runs new code on your PC, so only use an address you control or fully trust.
+## Первый запуск / сборка Windows
 
-## First-time setup (about 2 minutes)
-Button images are not bundled: they depend on your resolution, UI scale and game language.
-1. Run Fortnite in **windowed fullscreen** (exclusive fullscreen cannot be screen-captured).
-2. Open **Templates**, choose a role, type a name, press **Capture**, switch to the game and drag a
-   box around the button.
-   - `start`  - the button that begins the next match (counts a game)
-   - `result` - every button on the result / reward screens (Continue, Claim all, Back to lobby...)
-3. Capture one template per button, per game language (`templates/ru/`, `templates/en/`).
-4. **Test now** prints the current match score of every template. Raise the threshold on false clicks,
-   lower it on misses (default 0.80). Then press **Start** or **F7**.
+На Windows с Python 3.11 откройте **`run.bat`** или соберите обычный установщик через **`BUILD_INSTALLER.bat`** (требуется Inno Setup). Результат сборки: `release\EasyRewards_Setup_1.2.4.exe`.
 
-Games = start-button clicks. Cycles = games that reached a result screen.
+Старую версию 1.2.3 необходимо **один раз обновить до 1.2.4 через установщик вручную**. Версия 1.2.3 ещё не знает, как проверять GitHub Releases. При установке новой версии не удаляйте `%LOCALAPPDATA%\EasyRewards`.
 
-## Files
-- `run.bat` launcher · `app.py` GUI + CLI · `core.py` matching/engine · `winio.py` Windows capture, input, hotkeys
-- `updater.py` self-update · `tools/make_release.py` builds update packages
-- `i18n.py` all translations · `assets/` original logo (`tools/make_logo.py` regenerates it)
-- `tests/` engine, updater and GUI-smoke tests
+### Настройка автоматических обновлений GitHub
 
-## Important
-- Automating gameplay is against Epic Games' terms; accounts using it can be suspended. The anti-AFK
-  input is the part most likely to be noticed. Use at your own risk.
-- No license-key / online check is included.
-- Not affiliated with Epic Games. The logo is original artwork.
+Чтобы обновления стали доступны всем пользователям, недостаточно подготовить файл в ChatGPT: исходники и хотя бы один релиз должны реально появиться в репозитории `9akarena8-bit/easy-rewards`.
+
+1. Распакуйте этот архив и запустите **`PUBLISH_GITHUB.bat`** (нужен Git for Windows и вход в GitHub). Скрипт создаст **новую ветку** `feature/easyrewards-v1.2.4`, не трогая `main`, и выведет ссылку для Pull Request.
+2. Откройте ссылку, проверьте изменённые файлы и нажмите **Merge pull request**.
+3. После слияния запустите **`TAG_RELEASE.bat`** — он проверит версию в `main` и отправит тег `v1.2.4`.
+4. Перейдите на вкладку **Actions** репозитория и проверьте, что Windows-сборка успешно выполнилась. В **Releases** должен появиться установщик `EasyRewards_Setup_1.2.4.exe` и его SHA-256.
+5. Установите скачанный установщик поверх версии 1.2.3. После этого каждое новое стабильное GitHub Release будет обнаруживаться при старте приложения, и на экране появится кнопка «Обновить».
+
+Никаких токенов GitHub в исходном коде нет. Публикация использует только вход пользователя через локальный Git. Если GitHub Action получит ошибку permissions, проверьте Settings → Actions → General → Workflow permissions в репозитории: для публикации Releases нужен `Read and write permissions`.
+
+## Горячие клавиши
+
+- F7 — запустить, F8 — остановить, F10 — пауза/продолжить; F9 — +1 к первому счётчику Treasure Log.
+- По умолчанию нажатия выполняются только при активном окне Fortnite, иначе статус «Ожидание окна игры».
+- В настройках есть обычные клавиши W/A/S/D и дополнительный режим сочетаний/прыжков. Вмешательства в процесс игры или обхода античита нет.
+- Чтобы программа могла распознавать кнопки игры и результат матча, в текущей версии нужны шаблоны. Универсальный вход без шаблонов пока не реализован; он требует конкретных скриншотов и проверки на разных разрешениях/языках. Счётчик найденных наград тоже использует шаблон.
+
+## Проверки
+
+```cmd
+py -3.11 -m pip install -r requirements.txt pytest
+py -3.11 -m pytest -q
+```
+
+Сборка на Linux проверить реальный ввод в Fortnite и установщик Inno Setup не может. Эти проверки нужно выполнить на Windows.

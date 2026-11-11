@@ -6,7 +6,10 @@ set "EASY_REWARDS_LAUNCHER=1"
 
 rem ---- find Python 3.10+ ------------------------------------------------------
 set "PY="
-where py >nul 2>nul && set "PY=py -3"
+rem Prefer the tested Python 3.11 installation on Windows 10.
+py -3.11 -c "import sys" >nul 2>nul
+if not errorlevel 1 set "PY=py -3.11"
+if not defined PY where py >nul 2>nul && set "PY=py -3"
 if not defined PY where python >nul 2>nul && set "PY=python"
 if not defined PY goto nopython
 %PY% -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>nul
@@ -22,10 +25,9 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 :run
-echo Checking components...
-".venv\Scripts\python.exe" -m pip install -q -r requirements.txt
-if errorlevel 1 echo (could not reach the package server - trying to start anyway)
-".venv\Scripts\python.exe" -m pip install -q -r requirements-ui.txt >nul 2>nul
+echo Checking required components...
+".venv\Scripts\python.exe" tools\ensure_dependencies.py
+if errorlevel 1 goto fail
 
 ".venv\Scripts\python.exe" app.py %*
 set "RC=%errorlevel%"

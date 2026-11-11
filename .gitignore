@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.bak
+*.bak2
+.venv/
+_backup/
+dist/
+config.json
+tracker.json
+crash.log
+installed_files.json
+templates/*/*.png

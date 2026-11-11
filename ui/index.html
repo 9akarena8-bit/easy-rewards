@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Easy Rewards</title>
+<meta name="theme-color" content="#0d0f12">
+<link rel="icon" type="image/png" href="pirate_token.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="window-bar" class="window-bar">
+  <div class="window-drag pywebview-drag-region" title="Перетащить окно">
+    <img src="pirate_token.png" alt="" class="window-logo">
+    <span>Easy Rewards</span>
+    <span class="window-drag-hint">⋮⋮</span>
+  </div>
+  <div class="window-actions">
+    <button type="button" data-window="minimize" title="Свернуть" aria-label="Свернуть">−</button>
+    <button type="button" data-window="maximize" title="Развернуть" aria-label="Развернуть">□</button>
+    <button type="button" data-window="close" class="close" title="Закрыть" aria-label="Закрыть">×</button>
+  </div>
+</div>
+<div id="app" aria-live="polite"><div id="boot-screen" class="boot-screen">
+ <img src="pirate_token.png" alt="" class="boot-logo">
+ <strong>Easy Rewards</strong><span>Подключение к приложению…</span>
+ <small>Если соединение не установится, здесь появится описание ошибки.</small>
+</div></div>
+<script>
+// A persistent visible diagnostic: a script error must never become an empty window.
+if (new URLSearchParams(location.search).has('mini')) document.body.classList.add('mini');
+window.easyRewardsBootError = function(message) {
+  var app = document.getElementById('app');
+  if (!app || document.getElementById('running-interface')) return;
+  var box = document.createElement('div');
+  box.className = 'boot-screen boot-error';
+  var title = document.createElement('strong'); title.textContent = 'Ошибка интерфейса';
+  var desc = document.createElement('span'); desc.textContent = String(message || 'Неизвестная ошибка');
+  var hint = document.createElement('small'); hint.textContent = 'Запусти run-classic.bat для резервного интерфейса или пришли этот текст ошибки.';
+  box.append(title, desc, hint);
+  app.replaceChildren(box);
+};
+window.addEventListener('error', function(e) {
+  if (!document.getElementById('running-interface')) window.easyRewardsBootError(e.message || 'Ошибка загрузки JavaScript');
+});
+window.addEventListener('unhandledrejection', function(e) {
+  if (!document.getElementById('running-interface')) window.easyRewardsBootError(e.reason && e.reason.message || e.reason || 'Ошибка Python API');
+});
+</script>
+<script src="app.js"></script>
+</body>
+</html>

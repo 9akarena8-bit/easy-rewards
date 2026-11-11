@@ -81,7 +81,7 @@ def normalise(raw: dict) -> dict:
     d["week_start"] = _week_ok(str(raw.get("week_start", "")))
     d["odds"] = _int(raw.get("odds", DEFAULTS["odds"]), 1, 100_000_000, DEFAULTS["odds"])
     try:
-        d["boost"] = max(1.0, min(10.0, float(raw.get("boost", 1.0))))
+        d["boost"] = max(0.1, min(100.0, float(raw.get("boost", 1.0))))
     except (TypeError, ValueError):
         d["boost"] = 1.0
     d["rev"] = _int(raw.get("rev"))
@@ -198,7 +198,7 @@ class Tracker:
                 self.data["odds"] = _int(patch["odds"], 1, 100_000_000, self.data["odds"])
             if "boost" in patch:
                 try:
-                    self.data["boost"] = max(1.0, min(10.0, float(patch["boost"])))
+                    self.data["boost"] = max(0.1, min(100.0, float(patch["boost"])))
                 except (TypeError, ValueError):
                     pass
             if "week_start" in patch:

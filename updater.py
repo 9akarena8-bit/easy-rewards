@@ -21,7 +21,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import quote, urljoin, urlparse
 
 PRESERVE = {"config.json", "templates", ".venv", "_backup", "crash.log", "__pycache__", "dist",
-            "installed_files.json", "tracker.json"}
+            "installed_files.json", "tracker.json", "treasure.json"}
 TIMEOUT = 20
 MAX_ZIP = 100 * 1024 * 1024
 ALLOWED_SCHEMES = {"https"}  # tests add "file"

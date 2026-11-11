@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Easy Rewards emblem">
+ <defs>
+  <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+   <stop offset="0" stop-color="#f2d7a0"/>
+   <stop offset=".35" stop-color="#bc9758"/>
+   <stop offset=".65" stop-color="#e3c58f"/>
+   <stop offset="1" stop-color="#85663b"/>
+  </linearGradient>
+  <radialGradient id="base"><stop stop-color="#29251e"/><stop offset="1" stop-color="#0b0c0e"/></radialGradient>
+ </defs>
+ <rect x="1.5" y="1.5" width="117" height="117" rx="29" fill="url(#base)" stroke="#5e4c31" stroke-width="3"/>
+ <circle cx="60" cy="60" r="43" fill="none" stroke="url(#metal)" stroke-width="2.5" opacity=".85"/>
+ <circle cx="60" cy="60" r="37" fill="none" stroke="#af8f5b" stroke-width=".8" opacity=".5" stroke-dasharray="2 6"/>
+ <path d="M60 19 69 51 101 60 69 69 60 101 51 69 19 60 51 51Z" fill="url(#metal)"/>
+ <path d="m60 36 5.5 18.5L84 60l-18.5 5.5L60 84l-5.5-18.5L36 60l18.5-5.5Z" fill="#17171a"/>
+ <path d="m60 45 5 10 10 5-10 5-5 10-5-10-10-5 10-5Z" fill="url(#metal)"/>
+ <circle cx="60" cy="60" r="3" fill="#111213"/>
+</svg>

@@ -1,0 +1,67 @@
+name: Build Windows Installer
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - '**/*.py'
+      - 'ui/**'
+      - 'assets/**'
+      - 'VERSION'
+      - 'requirements*.txt'
+      - 'BUILD_INSTALLER.bat'
+      - 'installer.iss'
+      - '.github/workflows/build-windows.yml'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check version is consistent
+        shell: pwsh
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid VERSION' }
+          if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$v") { throw 'Tag and VERSION mismatch' }
+          if (-not (Select-String -Path installer.iss -SimpleMatch ('#define AppVersion "' + $v + '"'))) { throw 'Inno Setup version mismatch' }
+      - name: Build EXE and installer
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements.txt -r requirements-ui.txt 'pyinstaller>=6,<7'
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name EasyRewards --icon 'assets/icon.ico' --add-data 'ui:ui' --add-data 'assets:assets' --add-data 'VERSION:.' --collect-submodules webview app.py
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (!(Test-Path $iscc)) { $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 7/ISCC.exe' }
+          if (!(Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          }
+          if (!(Test-Path $iscc)) { throw 'Inno Setup compiler not found on runner' }
+          & $iscc installer.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed' }
+      - name: Compute SHA-256 for release installer
+        shell: pwsh
+        run: |
+          Get-ChildItem 'release/*.exe' | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)" | Set-Content -Path ($_.FullName + '.sha256') -Encoding ascii -NoNewline
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EasyRewards-Windows-Setup
+          path: release/*
+          if-no-files-found: error
+      - name: Publish GitHub Release when version tag is pushed
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.exe
+            release/*.sha256
+          generate_release_notes: true
+          fail_on_unmatched_files: true
