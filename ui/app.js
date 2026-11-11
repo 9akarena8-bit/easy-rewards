@@ -4,9 +4,9 @@ const $ = (s, r = document) => r.querySelector(s);
 const MINI = new URLSearchParams(location.search).has("mini");
 let pointerIsDown = false, pollingInProgress = false;
 let stableViewSignature = "", lastRenderedLog = -1;
-let tplRole = "start", tplName = "", S = {}, ST = null, page = "home", sig = "", flt = "all", tplList = [], shot = null, testRes = null, toastT, hiddenUpdateVersion = "";
+let tplRole = "start", tplName = "", S = {}, ST = null, page = "home", sig = "", flt = "all", tplList = [], shot = null, testRes = null, supportReport = null, toastT, hiddenUpdateVersion = "";
 const PAGES = [["home", "◉", "nav.home"], ["afk", "↝", "nav.afk"], ["tracker", "✦", "nav.tracker"], ["templates", "▣", "nav.templates"],
-  ["settings", "⚙", "nav.settings"], ["updates", "⟳", "nav.updates"], ["subscriptions", "◇", "nav.subscriptions"], ["guide", "?", "nav.guide"]];
+  ["settings", "⚙", "nav.settings"], ["updates", "⟳", "nav.updates"], ["subscriptions", "◇", "nav.subscriptions"], ["support", "⚑", "nav.support"], ["guide", "?", "nav.guide"]];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const t = (k, kw = {}) => (S[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "");
 const fmtT = seconds => { const s = Math.floor(Math.max(0, Number(seconds) || 0)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(n => String(n).padStart(2, "0")).join(":"); };
@@ -362,6 +362,27 @@ const PAGE = {
       <button type="button" class="btn" disabled>${t("subs.card")}</button>
       <button type="button" class="btn" disabled>${t("subs.sbp")}</button></div></div>`;
   },
+  support() {
+    const links = ST.support_contacts || {};
+    return `<div class="grid g2" style="align-items:start">
+      <section class="card"><h3>${t("support.title")}</h3>
+        <p class="mute">${t("support.intro")}</p>
+        <div class="row" style="margin-top:14px">
+          <button class="btn pri" data-act="support_report">${t("support.create_report")}</button>
+          <button class="btn" data-act="support_open" data-channel="github" ${links.github ? "" : "disabled"}>${t("support.github")}</button>
+          <button class="btn" data-act="support_open" data-channel="telegram" ${links.telegram ? "" : "disabled"}>Telegram</button>
+          <button class="btn" data-act="support_open" data-channel="discord" ${links.discord ? "" : "disabled"}>Discord</button>
+        </div>
+        <p class="mute" style="margin-top:14px">${t("support.contacts_notice")}</p>
+        <p class="mute">${t("support.privacy")}</p>
+      </section>
+      <section class="card"><h3>${t("support.report")}</h3>
+        ${supportReport?.ok ? `<p class="mute">${t("support.saved")}: ${esc(supportReport.path)}</p>
+          <textarea id="support-preview" class="in" rows="12" readonly style="width:100%;min-height:220px;resize:vertical">${esc(supportReport.text)}</textarea>
+          <div class="row" style="margin-top:10px"><button class="btn pri" data-act="support_copy">${t("support.copy")}</button></div>`
+        : `<p class="mute">${t("support.empty")}</p>`}
+      </section></div>`;
+  },
   guide() {
     const g = ST.guide, go = {1: ["templates", "guide.go"], 2: ["templates", "guide.go"], 3: ["templates", "guide.go"], 4: ["home", "guide.go"], 5: ["tracker", "guide.go"], 6: ["updates", "guide.go"]};
     const done = {2: g.c1 && g.c2, 4: g.c3};
@@ -428,6 +449,29 @@ document.addEventListener("click", async ev => {
   if (d.tdel) { await api.delete_template(d.tdel); tplList = await api.templates(); return tick(); }
   const a = d.act, v = id => ($("#" + id) || {}).value || "";
   if (a === "theme") return patch({theme: ST.cfg.theme === "dark" ? "light" : "dark"});
+  if (a === "support_report") {
+    supportReport = await api.create_support_report();
+    if (!supportReport.ok) toast(t("support.failed") + ": " + String(supportReport.error || ""));
+    return render(true);
+  }
+  if (a === "support_open") {
+    const response = await api.open_support(d.channel);
+    if (!response.ok) toast(t("support.failed") + ": " + String(response.error || ""));
+    return;
+  }
+  if (a === "support_copy") {
+    if (!supportReport?.text) return;
+    try {
+      if (!navigator.clipboard?.writeText) throw Error("clipboard unavailable");
+      await navigator.clipboard.writeText(supportReport.text);
+      toast(t("support.copied"));
+    } catch (err) {
+      const textarea = $("#support-preview");
+      textarea?.focus(); textarea?.select();
+      toast(t("support.select_copy"));
+    }
+    return;
+  }
   if (a === "reset") { await api.reset_stats(); return tick(); }
   if (a === "mini") return api.open_mini();
   if (a === "dismiss") return patch({guide_dismissed: true});
