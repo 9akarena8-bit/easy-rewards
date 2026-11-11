@@ -71,6 +71,14 @@ trade. Other games may have regular trade holds; check item-level restrictions.
 8. Do not store merchant credentials in git, config.json or bundled files.
    Keep PSP, Telegram and Steam merchant credentials on the secure service.
 
+## UI reference and anti-phishing constraints
+
+- Inspiration for the original gold UX: LIS-SKINS item tabs, search/sort, selected-items cart and confirmation layout; verified description: https://lis-skins.com/how-it-works/ . Do not copy website branding or graphics.
+- A separate stepper shows future verification, trade and activation states. It does **not** imply any real Steam trade exists.
+- The current manual item list is entered by the customer solely for planning, stored as a user-controlled *unverified* local draft. It is never treated as official market value.
+- Do not embed an imitation Steam password form or collect Steam Guard tokens. Future sign-in should use real Steam OpenID via a merchant-owned web backend and redirects to an official Steam login page.
+- If comparing with payment flow in gambling applications, take only standard UX patterns (method choice, transparency of amount, progress states), not gambling mechanics, links or integrations.
+
 ## Currently implemented (v1.3.9)
 
 - Backend allowlisted catalog and Steam game list.
