@@ -731,3 +731,26 @@ STRINGS["uk"].update({
     "replay.idle": "Очікуємо", "replay.seen": "Кнопку знайдено", "replay.clicked": "Натиснуто, завантаження", "replay.resumed": "Матч триває", "replay.death": "Екран смерті", "replay.unresponsive": "Натискання не прийняті",
     "log.replay_clicked": "Грати знову: натискання {attempt} (пошук {source})", "log.replay_resumed": "Екран результатів зник, анти-АФК відновлено", "log.restart_queued": "Повторний запуск після зупинки заплановано",
 })
+
+# v1.3.6 - responsive controls and explicit focus diagnostics.
+STRINGS["ru"].update({"state.capture_waiting": "Проверка экрана / Anti-AFK",
+    "afk.reason_capture_slow": "Захват экрана задерживается. Стоп и пауза остаются доступны.",
+    "afk.focus_button": "🎮 Переключиться на Fortnite",
+    "afk.focus_ok": "Fortnite теперь активен",
+    "afk.focus_denied": "Windows не разрешила переключение. Нажми Alt+Tab и выбери Fortnite.",
+    "afk.focus_not_found": "Окно Fortnite не найдено",
+    "afk.focus_error": "Не удалось переключиться на Fortnite"})
+STRINGS["en"].update({"state.capture_waiting": "Checking screen / Anti-AFK",
+    "afk.reason_capture_slow": "Screen capture is delayed. Stop and pause remain available.",
+    "afk.focus_button": "🎮 Switch to Fortnite",
+    "afk.focus_ok": "Fortnite is now active",
+    "afk.focus_denied": "Windows denied focus. Use Alt+Tab to select Fortnite.",
+    "afk.focus_not_found": "Fortnite window not found",
+    "afk.focus_error": "Could not activate Fortnite"})
+STRINGS["uk"].update({"state.capture_waiting": "Перевірка екрана / Anti-AFK",
+    "afk.reason_capture_slow": "Захоплення екрана затримується. Стоп і пауза доступні.",
+    "afk.focus_button": "🎮 Перейти до Fortnite",
+    "afk.focus_ok": "Fortnite тепер активний",
+    "afk.focus_denied": "Windows не дозволила переключитися. Виберіть Fortnite через Alt+Tab.",
+    "afk.focus_not_found": "Вікно Fortnite не знайдено",
+    "afk.focus_error": "Не вдалося активувати Fortnite"})
