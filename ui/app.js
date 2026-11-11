@@ -2,12 +2,13 @@
 const api = new Proxy({}, {get: (_, n) => (...a) => window.pywebview.api[n](...a)});
 const $ = (s, r = document) => r.querySelector(s);
 const MINI = new URLSearchParams(location.search).has("mini");
+let pointerIsDown = false, pollingInProgress = false;
 let tplRole = "start", tplName = "", S = {}, ST = null, page = "home", sig = "", flt = "all", tplList = [], shot = null, testRes = null, toastT, hiddenUpdateVersion = "";
 const PAGES = [["home", "◉", "nav.home"], ["afk", "↝", "nav.afk"], ["tracker", "✦", "nav.tracker"], ["templates", "▣", "nav.templates"],
   ["settings", "⚙", "nav.settings"], ["updates", "⟳", "nav.updates"], ["subscriptions", "◇", "nav.subscriptions"], ["guide", "?", "nav.guide"]];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const t = (k, kw = {}) => (S[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "");
-const fmtT = s => [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(n => String(n).padStart(2, "0")).join(":");
+const fmtT = seconds => { const s = Math.floor(Math.max(0, Number(seconds) || 0)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(n => String(n).padStart(2, "0")).join(":"); };
 const num = n => Number(n).toLocaleString();
 const tog = (k, on) => `<div class="tog ${on ? "on" : ""}" data-tog="${k}"></div>`;
 function toast(m) { clearTimeout(toastT); document.querySelectorAll(".toast").forEach(e => e.remove());
@@ -21,17 +22,40 @@ async function init() {
 }
 async function loadStrings() { S = await api.strings(ST.cfg.ui_language); document.documentElement.lang = ST.cfg.ui_language; }
 async function tick() {
+  if (pollingInProgress) return;
+  pollingInProgress = true;
+  try { return await refreshFromBackend(); } finally { pollingInProgress = false; }
+}
+async function refreshFromBackend() {
   const prevLang = ST && ST.cfg.ui_language;
   try { ST = await api.state(); } catch (e) { return; }
   if (ST.cfg.ui_language !== prevLang) await loadStrings();
   document.documentElement.dataset.theme = ST.cfg.theme;
   render();
 }
+function refreshLiveMetrics() {
+  if (!ST || !ST.engine) return;
+  document.querySelectorAll('[data-live="runtime"]').forEach(node => {
+    const value = fmtT(ST.engine.runtime || 0);
+    if (node.textContent !== value) node.textContent = value;
+  });
+}
+// Mouse down -> click must target the same DOM node. Rebuilding it mid-click
+// makes Stop/Pause intermittently unclickable on slower WebView2 machines.
+document.addEventListener("pointerdown", () => { pointerIsDown = true; }, true);
+document.addEventListener("pointerup", () => { pointerIsDown = false; setTimeout(() => render(), 0); }, true);
+document.addEventListener("pointercancel", () => { pointerIsDown = false; }, true);
 function render(force) {
+  if (!force && pointerIsDown) return;
   const a = document.activeElement, editing = a && a.matches && a.matches("input,select") && !MINI;
-  const s = JSON.stringify([page, flt, ST.cfg.ui_language, ST.cfg.theme, ST.cfg, ST.engine, ST.tracker.rev, ST.week, ST.guide, ST.tpl_counts,
-    ST.update, ST.subscription, ST.log.length && ST.log.at(-1).n, tplList.length, !!shot, testRes, ST.cfg.guide_dismissed]);
-  if (!force && (s === sig || (editing && !shot))) return;
+  const s = JSON.stringify([page, flt, ST.cfg.ui_language, ST.cfg.theme, ST.cfg, {...ST.engine, runtime: undefined}, ST.diagnostics, ST.tracker.rev, ST.week, ST.guide, ST.tpl_counts,
+    ST.update, ST.release_news, ST.subscription, ST.log.length && ST.log.at(-1).n, tplList.length, !!shot, testRes, ST.cfg.guide_dismissed]);
+  if (!force && (s === sig || (editing && !shot))) { refreshLiveMetrics(); return; }
+  const previousPage = document.querySelector('#app .page');
+  const oldScroll = previousPage ? previousPage.scrollTop : 0;
+  const oldRail = document.querySelector('#app .gold-nav');
+  const oldRailScroll = oldRail ? oldRail.scrollTop : 0;
+  const samePage = document.querySelector('#app [data-current-page]')?.dataset.currentPage === page;
   sig = s;
   if (MINI) { renderMini(); if (!document.getElementById("running-interface")) { const mark = document.createElement("span"); mark.id = "running-interface"; mark.hidden = true; document.body.append(mark); } return; }
   const tit = PAGES.find(p => p[0] === page)[2];
@@ -48,7 +72,14 @@ function render(force) {
       <div><b>${t("upd.banner_title", {v: esc(ST.update.version)})}</b><span>${ST.update.status === "ready" ? t("upd.ready") : ST.update.status === "downloading" ? t("upd.downloading") : t("upd.banner_subtitle")}</span></div>
       <button class="btn pri sm" data-act="uinst" ${ST.update.status === "downloading" ? "disabled" : ""}>${t("upd.exit_install")}</button>
       <button class="btn sm" data-act="ulater">${t("upd.later")}</button></div>` : ""}
-    <div class="page">${PAGE[page]()}</div></section>${shot ? overlay() : ""}`;
+    <div class="page" data-current-page="${page}">${PAGE[page]()}</div></section>${shot ? overlay() : ""}`;
+  if (samePage) {
+    const newScroll = document.querySelector('#app .page');
+    if (newScroll) newScroll.scrollTop = oldScroll;
+    const newRail = document.querySelector('#app .gold-nav');
+    if (newRail) newRail.scrollTop = oldRailScroll;
+  }
+  refreshLiveMetrics();
   if (shot) bindShot();
   if (!document.getElementById("running-interface")) { const mark = document.createElement("span"); mark.id = "running-interface"; mark.hidden = true; document.body.append(mark); }
 }
@@ -71,7 +102,7 @@ const PAGE = {
       </div>
       <div class="control-footer"><button class="btn sm" data-act="reset">${t("btn.reset")}</button><small>${t("hotkeys")}</small></div></div>
     <div class="card stats-card"><h3>${t("home.session_stats")}</h3><div class="grid g4"><div class="stat"><b>${e.games}</b><span>${t("stat.games")}</span></div>
-      <div class="stat"><b>${e.cycles}</b><span>${t("stat.cycles")}</span></div><div class="stat"><b>${fmtT(e.runtime)}</b><span>${t("stat.time")}</span></div>
+      <div class="stat"><b>${e.cycles}</b><span>${t("stat.cycles")}</span></div><div class="stat"><b><span data-live="runtime">${fmtT(e.runtime)}</span></b><span>${t("stat.time")}</span></div>
       <div class="stat"><b>${(e.score * 100 | 0)}%</b><span>${t("stat.match")}</span></div></div>
       <div class="history-title"><h3>${t("home.last_hour")}</h3><small>${t("home.chart_hint")}</small></div>
       <div class="bars">${h.map((x,i) => `<div title="${t("home.chart_bucket", {n:i+1, c:x.games+x.cycles})}" style="height:${Math.max(4, (x.games + x.cycles) / mx * 100)}%"></div>`).join("")}</div></div>

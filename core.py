@@ -205,6 +205,11 @@ class Engine:
         return self._thread is not None and self._thread.is_alive()
 
     @property
+    def stopping(self) -> bool:
+        """Stop request is authoritative even before a slow screen grab finishes."""
+        return self.running and self._stop.is_set()
+
+    @property
     def paused(self) -> bool:
         return self._paused.is_set()
 

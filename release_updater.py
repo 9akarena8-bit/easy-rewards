@@ -26,7 +26,7 @@ TIMEOUT_SECONDS = 25
 
 def _urlopen(url: str):
     return urlopen(Request(url, headers={
-        "User-Agent": "EasyRewards-ReleaseUpdater/1.3.4",
+        "User-Agent": "EasyRewards-ReleaseUpdater/1.3.5",
         "Accept": "application/vnd.github+json" if url == RELEASE_API else "application/octet-stream",
     }), timeout=TIMEOUT_SECONDS)
 
@@ -140,13 +140,65 @@ def download_installer(meta: dict, directory: Path | None = None) -> Path:
         pending.unlink(missing_ok=True)
 
 
-def launch_installer(path: Path) -> None:
-    """Open the standard signed/unsigned Windows installer *with user confirmation*.
+def release_news(limit: int = 7) -> list[dict]:
+    """Fetch recent published GitHub release notes for the built-in news feed.
 
-    This does not grant elevated privileges or perform a silent update.
-    The installer offers its normal finish/relaunch option.
+    No HTML or executable code from the release is trusted. The UI escapes text.
+    """
+    url = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page={min(max(1,limit),10)}"
+    data = json.loads(_read_limited(url, 1_000_000).decode("utf-8"))
+    if not isinstance(data, list):
+        raise ValueError("Invalid release feed")
+    items = []
+    for rel in data:
+        if not isinstance(rel, dict) or rel.get("draft") or rel.get("prerelease"):
+            continue
+        version = str(rel.get("tag_name") or "").removeprefix("v")
+        if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+            continue
+        notes = str(rel.get("body") or "").strip()
+        # GitHub auto-generated notes can include verbose markdown and links.
+        # Show the latest excerpt; no marketing claims about new features.
+        items.append({"version": version,
+                      "title": f"Easy Rewards v{version}",
+                      "notes": notes[:380] or "Опубликована новая версия Easy Rewards."})
+    return items
+
+
+def cleanup_update_cache(current_version: str) -> int:
+    """Remove obsolete verified setup downloads after launching an updated version.
+
+    Never delete a newer installer that may still be waiting to install.
+    """
+    if not re.fullmatch(r"\d+\.\d+\.\d+", str(current_version)):
+        return 0
+    folder = Path(tempfile.gettempdir()) / "EasyRewards-Updates"
+    if not folder.is_dir():
+        return 0
+    removed = 0
+    from updater import is_newer
+    for p in folder.iterdir():
+        match = re.fullmatch(r"EasyRewards_Setup_(\d+\.\d+\.\d+)\.exe(?:\.download)?", p.name)
+        if match and p.is_file() and not is_newer(match.group(1), current_version):
+            try:
+                p.unlink()
+                removed += 1
+            except OSError:
+                pass  # Installer still executing or locked; next launch can retry.
+    return removed
+
+
+def launch_installer(path: Path, language: str = "ru") -> None:
+    """Install the *already verified* release after explicit user confirmation.
+
+    Inno Setup quiet mode reuses its AppId and install directory, does not
+    prompt for a language on every update and never erases the user data dir.
+    Full installer is still downloaded; delta patching needs a future format.
     """
     path = Path(path).resolve()
-    if not path.is_file() or not path.name.startswith(SETUP_PREFIX) or path.suffix.lower() != ".exe":
+    if not path.is_file() or not re.fullmatch(r"EasyRewards_Setup_\d+\.\d+\.\d+\.exe", path.name):
         raise ValueError("Not a downloaded Easy Rewards installer")
-    subprocess.Popen([str(path)], close_fds=True)
+    lang = "russian" if language == "ru" else "english"
+    command = [str(path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
+               "/CLOSEAPPLICATIONS", "/NORESTARTAPPLICATIONS", f"/LANG={lang}"]
+    subprocess.Popen(command, close_fds=True)

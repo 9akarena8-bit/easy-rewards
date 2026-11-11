@@ -142,3 +142,7 @@ body:not(.mini) .gold-nav .nav{flex-shrink:0}
 body:not(.mini) .gold-rail-bottom{flex:0 0 auto}
 .gold-hero h2{font-family:"Arial Black",Bahnschrift,"Segoe UI",sans-serif;font-weight:900}
 .gold-chest{filter:brightness(1.23) saturate(1.22) drop-shadow(0 18px 28px rgba(4,5,6,.55))}
+
+/* Stable interface: avoid restarting decorative animations when status changes. */
+body:not(.mini) .gold-chest,body:not(.mini) .gold-token{animation:none!important}
+.gold-nav .nav i{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:22px}

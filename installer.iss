@@ -1,6 +1,6 @@
 ; Easy Rewards per-user installer; generated on Windows with Inno Setup.
 #define AppName "Easy Rewards"
-#define AppVersion "1.3.4"
+#define AppVersion "1.3.5"
 #define AppExe "EasyRewards.exe"
 
 [Setup]
@@ -42,4 +42,4 @@ Type: files; Name: "{autoprograms}\Easy Rewards Gold Edition.lnk"
 Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; Flags: checkedonce
 
 [Run]
-Filename: "{app}\EasyRewards.exe"; Description: "Запустить Easy Rewards"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\EasyRewards.exe"; Description: "Запустить Easy Rewards"; Flags: nowait
