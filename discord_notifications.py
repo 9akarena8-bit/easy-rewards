@@ -109,7 +109,7 @@ class DiscordNotifications:
                 return {"ok": False, "error": "Cannot remove local Discord settings"}
         return {"ok": True, **self.status()}
 
-    def notify(self, key: str, *, test: bool = False) -> bool:
+    def notify(self, key: str, *, test: bool = False, runtime_seconds: int | None = None) -> bool:
         if key not in _ALLOWED_KEYS and not test:
             return False
         with self._lock:
@@ -123,6 +123,10 @@ class DiscordNotifications:
             self._last_event_at[key] = now
             message = ("✅ Fortnite Pirate Token: Discord test notification"
                        if test else _MESSAGES[key])
+            if key == "log.stopped" and runtime_seconds is not None and not test:
+                seconds = max(0, min(int(runtime_seconds), 30 * 86400))
+                duration = f"{seconds // 3600:02d}:{(seconds // 60) % 60:02d}:{seconds % 60:02d}"
+                message += f" · session {duration}"
             try:
                 self._pending.put_nowait((self._url, message))
                 return True
