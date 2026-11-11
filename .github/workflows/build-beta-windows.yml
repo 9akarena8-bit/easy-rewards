@@ -41,6 +41,7 @@ jobs:
         run: |
           node --check ui/app.js
           node --check ui/gold_ui.js
+          node --test tests/browser_controls.test.cjs
       - name: Build Windows executable
         shell: pwsh
         run: |
@@ -57,7 +58,7 @@ jobs:
       - name: Upload beta installer (no public release)
         uses: actions/upload-artifact@v4
         with:
-          name: EasyRewards-v1.3.7-Beta-Setup
+          name: EasyRewards-v1.3.8-Beta-Setup
           path: release/*.exe
           if-no-files-found: error
           retention-days: 7

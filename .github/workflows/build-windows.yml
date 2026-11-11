@@ -51,6 +51,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax failed' }
           node --check ui/gold_ui.js
           if ($LASTEXITCODE -ne 0) { throw 'Gold UI syntax failed' }
+          node --test tests/browser_controls.test.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Browser control regression tests failed' }
       - name: Build EXE and installer
         shell: pwsh
         run: |

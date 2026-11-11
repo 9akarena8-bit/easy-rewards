@@ -3,9 +3,10 @@ const api = new Proxy({}, {get: (_, n) => (...a) => window.pywebview.api[n](...a
 const $ = (s, r = document) => r.querySelector(s);
 const MINI = new URLSearchParams(location.search).has("mini");
 let pointerIsDown = false, pollingInProgress = false;
-let tplRole = "start", tplName = "", S = {}, ST = null, page = "home", sig = "", flt = "all", tplList = [], shot = null, testRes = null, toastT, hiddenUpdateVersion = "";
+let stableViewSignature = "", lastRenderedLog = -1;
+let tplRole = "start", tplName = "", S = {}, ST = null, page = "home", sig = "", flt = "all", tplList = [], shot = null, testRes = null, supportReport = null, toastT, hiddenUpdateVersion = "";
 const PAGES = [["home", "◉", "nav.home"], ["afk", "↝", "nav.afk"], ["tracker", "✦", "nav.tracker"], ["templates", "▣", "nav.templates"],
-  ["settings", "⚙", "nav.settings"], ["updates", "⟳", "nav.updates"], ["subscriptions", "◇", "nav.subscriptions"], ["guide", "?", "nav.guide"]];
+  ["settings", "⚙", "nav.settings"], ["updates", "⟳", "nav.updates"], ["subscriptions", "◇", "nav.subscriptions"], ["support", "⚑", "nav.support"], ["guide", "?", "nav.guide"]];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const t = (k, kw = {}) => (S[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "");
 const fmtT = seconds => { const s = Math.floor(Math.max(0, Number(seconds) || 0)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(n => String(n).padStart(2, "0")).join(":"); };
@@ -35,10 +36,48 @@ async function refreshFromBackend() {
 }
 function refreshLiveMetrics() {
   if (!ST || !ST.engine) return;
-  document.querySelectorAll('[data-live="runtime"]').forEach(node => {
-    const value = fmtT(ST.engine.runtime || 0);
-    if (node.textContent !== value) node.textContent = value;
+  const e = ST.engine;
+  const updateText = (selector, value) => {
+    document.querySelectorAll(selector).forEach(node => {
+      if (node.textContent !== String(value)) node.textContent = String(value);
+    });
+  };
+  updateText('[data-live="runtime"]', fmtT(e.runtime || 0));
+  updateText('[data-live="games"]', e.games || 0);
+  updateText('[data-live="cycles"]', e.cycles || 0);
+  updateText('[data-live="rewards"]', num(e.rewards || 0));
+  updateText('[data-live="afk-total"]', t("afk.total") + ": " + (e.input_count || 0));
+  updateText('[data-live="afk-last"]', t("afk.last") + ": " + (e.last_input || "—"));
+  updateText('[data-live="game-status"]', ST.diagnostics?.game_active ? t("diag.active")
+    : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing")));
+  updateText('[data-live="foreground-title"]', ST.diagnostics?.foreground_title || t("diag.none"));
+  updateText('[data-live="foreground-process"]', ST.diagnostics?.foreground_process || "—");
+  updateText('[data-live="last-control"]', (ST.controls?.last || "—")
+    + " " + (ST.controls?.time || "") + " (" + Number(ST.controls?.sequence || 0) + ")");
+  document.querySelectorAll('button[data-act="start"]').forEach(node => { node.disabled = Boolean(e.running); });
+  document.querySelectorAll('button[data-act="stop"],button[data-act="pause"]').forEach(node => {
+    node.disabled = !e.running;
   });
+  document.querySelectorAll('button[data-act="pause"]').forEach(node => {
+    const text = (node.classList.contains("gold-pause") || node.classList.contains("control-pause") ? (e.paused ? "▶ " : "Ⅱ ") : "")
+      + (e.paused ? t("btn.resume") : t("btn.pause"));
+    if (node.textContent !== text) node.textContent = text;
+  });
+  document.querySelectorAll('.gold-status').forEach(node => {
+    node.querySelector(".gold-led")?.classList.toggle("active", Boolean(e.running && !e.paused));
+    if (node.lastChild?.nodeType === 3) node.lastChild.nodeValue = t("state." + e.state);
+  });
+  document.querySelectorAll('.home-topline .pill').forEach(node => {
+    node.querySelector(".dot")?.classList.toggle("on", Boolean(e.running && !e.paused));
+    if (node.lastChild?.nodeType === 3) node.lastChild.nodeValue = t("state." + e.state);
+  });
+  const logNumber = ST.log.length ? ST.log[ST.log.length - 1].n : 0;
+  if (logNumber !== lastRenderedLog) {
+    lastRenderedLog = logNumber;
+    const entries = ST.log.slice(page === "home" && document.querySelector(".gold-activity") ? -6 : -40).reverse();
+    const output = entries.map(r => esc(r.t) + "  " + esc(t(r.key, r.kw))).join("<br>") || "—";
+    document.querySelectorAll(".log").forEach(node => { node.innerHTML = output; });
+  }
 }
 // Critical controls execute on pointerdown, BEFORE DOM rebuild/click bubbling.
 // Their confirmation remains visible even if the normal click event is lost.
@@ -85,14 +124,28 @@ document.addEventListener("pointerdown", ev => {
   lastPointerControl = {element: btn, at: Date.now()};
   void runControlAction(btn.dataset.act, btn.dataset.target || "fortnite");
 }, true);
-document.addEventListener("pointerup", () => { pointerIsDown = false; setTimeout(() => render(), 0); }, true);
+document.addEventListener("pointerup", () => { pointerIsDown = false; setTimeout(() => render(), 180); }, true);
 document.addEventListener("pointercancel", () => { pointerIsDown = false; }, true);
+window.addEventListener("blur", () => { pointerIsDown = false; });
 function render(force) {
   if (!force && pointerIsDown) return;
-  const a = document.activeElement, editing = a && a.matches && a.matches("input,select") && !MINI;
+  const a = document.activeElement, editing = a && a.matches && a.matches("input,select,textarea") && !MINI;
   const s = JSON.stringify([page, flt, ST.cfg.ui_language, ST.cfg.theme, ST.cfg, {...ST.engine, runtime: undefined}, ST.diagnostics, ST.tracker.rev, ST.week, ST.guide, ST.tpl_counts,
-    ST.update, ST.release_news, ST.subscription, ST.log.length && ST.log.at(-1).n, tplList.length, !!shot, testRes, ST.cfg.guide_dismissed]);
+    ST.update, ST.release_news, ST.subscription, ST.discord_notifications, ST.log.length && ST.log.at(-1).n, tplList.length, !!shot, testRes, ST.cfg.guide_dismissed]);
+  // Engine counters, focus and runtime change every poll. Replacing #app
+  // each time destroys the buttons under the user's mouse in WebView2.
+  // Keep Home and Anti-AFK DOM stable; update their metrics in place.
+  const stablePage = !MINI && (page === "home" || page === "afk");
+  const staticSignature = JSON.stringify([page, flt, ST.cfg.ui_language, ST.cfg.theme,
+    ST.cfg, ST.tracker.rev, ST.week, ST.guide, ST.tpl_counts, ST.update,
+    ST.release_news, ST.subscription, tplList.length, Boolean(shot), testRes]);
+  const sameRenderedPage = document.querySelector('#app [data-current-page]')?.dataset.currentPage === page;
+  if (!force && stablePage && sameRenderedPage && staticSignature === stableViewSignature) {
+    refreshLiveMetrics();
+    return;
+  }
   if (!force && (s === sig || (editing && !shot))) { refreshLiveMetrics(); return; }
+  stableViewSignature = staticSignature;
   const previousPage = document.querySelector('#app .page');
   const oldScroll = previousPage ? previousPage.scrollTop : 0;
   const oldRail = document.querySelector('#app .gold-nav');
@@ -115,6 +168,7 @@ function render(force) {
       <button class="btn pri sm" data-act="uinst" ${ST.update.status === "downloading" ? "disabled" : ""}>${t("upd.exit_install")}</button>
       <button class="btn sm" data-act="ulater">${t("upd.later")}</button></div>` : ""}
     <div class="page" data-current-page="${page}">${PAGE[page]()}</div></section>${shot ? overlay() : ""}`;
+  lastRenderedLog = ST.log.length ? ST.log[ST.log.length - 1].n : 0;
   if (samePage) {
     const newScroll = document.querySelector('#app .page');
     if (newScroll) newScroll.scrollTop = oldScroll;
@@ -143,8 +197,8 @@ const PAGE = {
         <button class="btn control-pause" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} &nbsp;${e.paused ? t("btn.resume") : t("btn.pause")}</button>
       </div>
       <div class="control-footer"><button class="btn sm" data-act="reset">${t("btn.reset")}</button><small>${t("hotkeys")}</small></div></div>
-    <div class="card stats-card"><h3>${t("home.session_stats")}</h3><div class="grid g4"><div class="stat"><b>${e.games}</b><span>${t("stat.games")}</span></div>
-      <div class="stat"><b>${e.cycles}</b><span>${t("stat.cycles")}</span></div><div class="stat"><b><span data-live="runtime">${fmtT(e.runtime)}</span></b><span>${t("stat.time")}</span></div>
+    <div class="card stats-card"><h3>${t("home.session_stats")}</h3><div class="grid g4"><div class="stat"><b data-live="games">${e.games}</b><span>${t("stat.games")}</span></div>
+      <div class="stat"><b data-live="cycles">${e.cycles}</b><span>${t("stat.cycles")}</span></div><div class="stat"><b><span data-live="runtime">${fmtT(e.runtime)}</span></b><span>${t("stat.time")}</span></div>
       <div class="stat"><b>${(e.score * 100 | 0)}%</b><span>${t("stat.match")}</span></div></div>
       <div class="history-title"><h3>${t("home.last_hour")}</h3><small>${t("home.chart_hint")}</small></div>
       <div class="bars">${h.map((x,i) => `<div title="${t("home.chart_bucket", {n:i+1, c:x.games+x.cycles})}" style="height:${Math.max(4, (x.games + x.cycles) / mx * 100)}%"></div>`).join("")}</div></div>
@@ -175,17 +229,16 @@ const PAGE = {
       <button class="btn pri" data-act="start" ${e.running ? "disabled" : ""}>▶ ${t("btn.start")}</button>
       <button class="btn" data-act="stop" ${!e.running ? "disabled" : ""}>■ ${t("btn.stop")}</button>
       <button class="btn" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? t("btn.resume") : t("btn.pause")}</button>
-      <span class="badge">${t("afk.total")}: ${e.input_count}</span>
-      <span class="badge">${t("afk.last")}: ${esc(e.last_input || "—")}</span>
+      <span class="badge" data-live="afk-total">${t("afk.total")}: ${e.input_count}</span>
+      <span class="badge" data-live="afk-last">${t("afk.last")}: ${esc(e.last_input || "—")}</span>
     </div>
     ${e.input_error ? `<div class="warnbox">${esc(e.input_error)}</div>` : ""}
     <div class="card afk-diag" style="margin-bottom:16px">
       <h3>${t("diag.heading")}</h3>
-      <p class="mute">${t("afk.diag_status")}: <b>${ST.diagnostics?.game_active ? t("diag.active") : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing"))}</b></p>
-      <p class="mute">${t("diag.foreground")}: <b>${esc(ST.diagnostics?.foreground_title || t("diag.none"))}</b>
-        (${esc(ST.diagnostics?.foreground_process || "—")})</p>
-      <p class="mute">${t("afk.last_control")}: <b>${esc(ST.controls?.last || "—")}</b>
-        ${esc(ST.controls?.time || "")} (${Number(ST.controls?.sequence || 0)})</p>
+      <p class="mute">${t("afk.diag_status")}: <b data-live="game-status">${ST.diagnostics?.game_active ? t("diag.active") : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing"))}</b></p>
+      <p class="mute">${t("diag.foreground")}: <b data-live="foreground-title">${esc(ST.diagnostics?.foreground_title || t("diag.none"))}</b>
+        (<span data-live="foreground-process">${esc(ST.diagnostics?.foreground_process || "—")}</span>)</p>
+      <p class="mute">${t("afk.last_control")}: <b data-live="last-control">${esc(ST.controls?.last || "—")} ${esc(ST.controls?.time || "")} (${Number(ST.controls?.sequence || 0)})</b></p>
       ${e.wait_reason ? `<p class="focus-warn">${esc(t("afk.reason_" + e.wait_reason))}</p>` : ""}
       <div class="row" style="flex-wrap:wrap;gap:10px">
         <button class="btn sm" data-act="focusgame" ${!ST.diagnostics?.game_found ? "disabled" : ""}>${t("afk.focus_button")}</button>
@@ -309,6 +362,51 @@ const PAGE = {
       <button type="button" class="btn" disabled>${t("subs.card")}</button>
       <button type="button" class="btn" disabled>${t("subs.sbp")}</button></div></div>`;
   },
+  support() {
+    const links = ST.support_contacts || {};
+    const discord = ST.discord_notifications || {};
+    return `<div class="grid g2" style="align-items:start">
+      <section class="card"><h3>${t("support.title")}</h3>
+        <p class="mute">${t("support.intro")}</p>
+        <div class="row" style="margin-top:14px">
+          <button class="btn pri" data-act="support_report">${t("support.create_report")}</button>
+          <button class="btn" data-act="support_open" data-channel="github" ${links.github ? "" : "disabled"}>${t("support.github")}</button>
+          <button class="btn" data-act="support_open" data-channel="telegram" ${links.telegram ? "" : "disabled"}>Telegram</button>
+          <button class="btn" data-act="support_open" data-channel="discord" ${links.discord ? "" : "disabled"}>Discord</button>
+        </div>
+        <p class="mute" style="margin-top:14px">${t("support.contacts_notice")}</p>
+        <p class="mute">${t("support.privacy")}</p>
+      </section>
+      <section class="card"><h3>${t("support.report")}</h3>
+        ${supportReport?.ok ? `<p class="mute">${t("support.saved")}: ${esc(supportReport.path)}</p>
+          <textarea id="support-preview" class="in" rows="12" readonly style="width:100%;min-height:220px;resize:vertical">${esc(supportReport.text)}</textarea>
+          <div class="row" style="margin-top:10px"><button class="btn pri" data-act="support_copy">${t("support.copy")}</button></div>`
+        : `<p class="mute">${t("support.empty")}</p>`}
+      </section>
+      <section class="card" style="grid-column:1/-1">
+        <h3>${t("discord.title")}</h3>
+        <p class="mute">${t("discord.intro")}</p>
+        <p class="mute">${discord.configured ? t("discord.configured") : t("discord.unconfigured")}</p>
+        <label class="field" style="display:block">
+          <span>${t("discord.webhook")}</span>
+          <input class="in" id="discord-webhook" type="password" autocomplete="off"
+                 placeholder="https://discord.com/api/webhooks/..." style="width:100%">
+        </label>
+        <label class="row" style="margin:12px 0">
+          <input id="discord-enabled" type="checkbox" ${discord.enabled ? "checked" : ""}>
+          <span>${t("discord.enabled")}</span>
+        </label>
+        <div class="row">
+          <button class="btn pri" data-act="discord_save">${t("discord.save")}</button>
+          <button class="btn" data-act="discord_test" ${!discord.enabled ? "disabled" : ""}>${t("discord.test")}</button>
+          <button class="btn warn" data-act="discord_clear" ${!discord.configured ? "disabled" : ""}>${t("discord.clear")}</button>
+        </div>
+        <p class="mute" style="margin-top:12px">${t("discord.events")}</p>
+        ${discord.last_sent ? `<p class="mute">${t("discord.last_sent")}: ${esc(discord.last_sent)}</p>` : ""}
+        ${discord.last_error ? `<p class="warnbox">${esc(discord.last_error)}</p>` : ""}
+        <p class="mute">${t("discord.privacy")}</p>
+      </section></div>`;
+  },
   guide() {
     const g = ST.guide, go = {1: ["templates", "guide.go"], 2: ["templates", "guide.go"], 3: ["templates", "guide.go"], 4: ["home", "guide.go"], 5: ["tracker", "guide.go"], 6: ["updates", "guide.go"]};
     const done = {2: g.c1 && g.c2, 4: g.c3};
@@ -375,6 +473,47 @@ document.addEventListener("click", async ev => {
   if (d.tdel) { await api.delete_template(d.tdel); tplList = await api.templates(); return tick(); }
   const a = d.act, v = id => ($("#" + id) || {}).value || "";
   if (a === "theme") return patch({theme: ST.cfg.theme === "dark" ? "light" : "dark"});
+  if (a === "discord_save") {
+    const url = ($("#discord-webhook") || {}).value || "";
+    const enabled = Boolean($("#discord-enabled")?.checked);
+    const result = await api.discord_configure(url.trim(), enabled);
+    toast(result.ok ? t("discord.saved") : t("support.failed") + ": " + String(result.error || ""));
+    return tick();
+  }
+  if (a === "discord_test") {
+    const result = await api.discord_test();
+    toast(result.ok ? t("discord.queued") : t("support.failed") + ": " + String(result.error || ""));
+    return tick();
+  }
+  if (a === "discord_clear") {
+    if (!confirm(t("discord.confirm_clear"))) return;
+    const result = await api.discord_clear();
+    toast(result.ok ? t("discord.cleared") : t("support.failed") + ": " + String(result.error || ""));
+    return tick();
+  }
+  if (a === "support_report") {
+    supportReport = await api.create_support_report();
+    if (!supportReport.ok) toast(t("support.failed") + ": " + String(supportReport.error || ""));
+    return render(true);
+  }
+  if (a === "support_open") {
+    const response = await api.open_support(d.channel);
+    if (!response.ok) toast(t("support.failed") + ": " + String(response.error || ""));
+    return;
+  }
+  if (a === "support_copy") {
+    if (!supportReport?.text) return;
+    try {
+      if (!navigator.clipboard?.writeText) throw Error("clipboard unavailable");
+      await navigator.clipboard.writeText(supportReport.text);
+      toast(t("support.copied"));
+    } catch (err) {
+      const textarea = $("#support-preview");
+      textarea?.focus(); textarea?.select();
+      toast(t("support.select_copy"));
+    }
+    return;
+  }
   if (a === "reset") { await api.reset_stats(); return tick(); }
   if (a === "mini") return api.open_mini();
   if (a === "dismiss") return patch({guide_dismissed: true});

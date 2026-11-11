@@ -95,7 +95,7 @@
     ["home", "⌂", "nav.home"], ["afk", "↝", "nav.afk"], ["tracker", "◈", "nav.tracker"],
     ["templates", "▣", "nav.templates"], ["updates", "▤", "nav.updates"],
     ["subscriptions", "♛", "nav.subscriptions"], ["settings", "⚙", "nav.settings"],
-    ["account", "◉", "nav.account"], ["guide", "?", "nav.guide"]);
+    ["support", "⚑", "nav.support"], ["account", "◉", "nav.account"], ["guide", "?", "nav.guide"]);
   PAGE.home = function() {
     const e = ST.engine, hist = Array.isArray(e.history) ? e.history : [], max = Math.max(1, ...hist.map(x => x.games + x.cycles));
     const guide = ST.guide || {}, todo = !guide.dismissed && !(guide.c1 && guide.c2 && guide.c3);
@@ -118,11 +118,12 @@
       <span class="gold-spark spark-a">✦</span><span class="gold-spark spark-b">✦</span></div></section>
     <div class="gold-dashboard"><div class="gold-dashboard-main">${newsMarkup()}
       <div class="gold-summary-grid"><section class="card gold-metrics"><div class="gold-section-head"><div><span class="gold-overline">${ui("ТВОЙ ПРОГРЕСС", "YOUR PROGRESS", "ТВІЙ ПРОГРЕС")}</span><h2>${ui("Статистика", "Statistics", "Статистика")}</h2></div></div>
-       <div class="gold-stat-grid">${stats.map(([name,value])=>`<div class="gold-stat"><b ${name === ui("Время", "Time", "Час") ? 'data-live="runtime"' : ""}>${safe(value)}</b><span>${safe(name)}</span></div>`).join("")}</div>
+       <div class="gold-stat-grid">${stats.map(([name,value],index)=>`<div class="gold-stat"><b data-live="${["games","cycles","runtime","rewards"][index]}">${safe(value)}</b><span>${safe(name)}</span></div>`).join("")}</div>
        <div class="gold-chart-label">${t("home.last_hour")}</div><div class="gold-bars">${hist.map(h=>`<i style="height:${Math.max(4,(h.games+h.cycles)/max*100)}%"></i>`).join("")}</div></section>
       <section class="card gold-metrics gold-diagnostics"><div class="gold-section-head"><div><span class="gold-overline">${ui("ДИАГНОСТИКА", "DIAGNOSTICS", "ДІАГНОСТИКА")}</span><h2>${t("diag.heading")}</h2></div></div>
         <div class="focus-line"><span>${t("diag.game")}</span><b class="${ST.diagnostics?.game_active ? "good" : "muted"}">${ST.diagnostics?.game_active ? t("diag.active") : t("diag.inactive")}</b></div>
-        <div class="focus-line"><span>${t("diag.foreground")}</span><b>${safe(ST.diagnostics?.foreground_title || t("diag.none"))}</b></div>
+        <div class="focus-line"><span>${t("diag.foreground")}</span><b data-live="foreground-title">${safe(ST.diagnostics?.foreground_title || t("diag.none"))}</b></div>
+        <div class="focus-line"><span>${t("afk.last_control")}</span><b data-live="last-control">${safe(ST.controls?.last || "—")} ${safe(ST.controls?.time || "")} (${Number(ST.controls?.sequence || 0)})</b></div>
         <div class="focus-line"><span>${t("diag.inputs")}</span><b>${safe(e.input_count || 0)}${e.last_input ? " · "+safe(e.last_input) : ""}</b></div>
         ${e.input_error ? `<p class="focus-warn">${safe(e.input_error)}</p>` : ""}
         ${e.running && !ST.diagnostics?.game_active && ST.cfg.require_foreground ? `<p class="focus-warn">${t("diag.focus_hint")}</p>` : ""}
@@ -203,7 +204,12 @@
     }
     if (ev.target.closest("[data-page]")) { notificationOpen = false; profileOpen = false; return; }
     if (!ev.target.closest(".gold-pop")) {
-      if (notificationOpen || profileOpen) { notificationOpen = false; profileOpen = false; renderGold(true); }
+      if (notificationOpen || profileOpen) {
+        notificationOpen = false; profileOpen = false;
+        // The listener runs during capture, BEFORE app.js's click handler.
+        // Rebuilding here removes the clicked element and loses control clicks.
+        setTimeout(() => renderGold(true), 0);
+      }
     }
   }, true);
 })();
