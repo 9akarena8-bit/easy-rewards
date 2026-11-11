@@ -64,6 +64,7 @@ class Backend:
         "counter_add", "counter_set", "counter_edit", "counter_new", "counter_delete", "tokens_add",
         "prize_add", "prize_toggle", "prize_delete", "tracker_set", "tracker_export", "tracker_import",
         "tracker_reset", "update_check", "update_prepare", "update_install", "open_mini", "close_mini",
+        "input_probe_delayed",
     )
 
     def __init__(self, base, io, hooks: Hooks | None = None):
@@ -156,11 +157,16 @@ class Backend:
                        "games": e.games, "cycles": e.cycles, "rewards": e.rewards, "runtime": int(e.runtime),
                        "history": self._history(),
                        "input_count": e.input_count, "last_input": e.last_input,
-                       "input_error": e.last_input_error},
+                       "input_error": e.last_input_error,
+                       "wait_reason": e.wait_reason,
+                       "probe_status": e.probe_status, "probe_detail": e.probe_detail,
+                       "probe_at": e.probe_at, "probe_target": e.probe_target},
             "reward": {"session": e.rewards, "total": self.reward_stats.total},
             "diagnostics": {
                 "foreground_title": (self.io.foreground_title() if hasattr(self.io, "foreground_title") else ""),
                 "game_active": bool(self.io.game_in_foreground()),
+                "game_found": bool(self.io.game_window_found()) if hasattr(self.io, "game_window_found") else False,
+                "foreground_process": (self.io.foreground_process() if hasattr(self.io, "foreground_process") else ""),
                 "game_title": str(getattr(self.io, "window_title", "Fortnite")),
                 "template_count": len(e.templates),
             },
@@ -179,6 +185,23 @@ class Backend:
     # ------------------------------------------------------------ engine controls
     def start(self) -> None:
         self.engine.start()
+
+    def input_probe_delayed(self, target: str = "fortnite") -> dict:
+        """Schedule a test while the user switches to the target window."""
+        if target not in ("fortnite", "notepad"):
+            return {"ok": False, "reason": "invalid_target"}
+        if self.engine.running:
+            return {"ok": False, "reason": "stop_first"}
+        if self.engine.probe_status == "scheduled":
+            return {"ok": False, "reason": "already_scheduled"}
+        self.engine.probe_status = "scheduled"
+        self.engine.probe_target = target
+        self.engine.probe_detail = f"Focus {target} within 3 seconds"
+        def run():
+            time.sleep(3)
+            self.engine.input_probe(target)
+        threading.Thread(target=run, name="afk-input-test", daemon=True).start()
+        return {"ok": True}
 
     def stop(self) -> None:
         self.engine.stop()

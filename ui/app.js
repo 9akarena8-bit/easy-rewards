@@ -106,6 +106,21 @@ const PAGE = {
       <span class="badge">${t("afk.last")}: ${esc(e.last_input || "—")}</span>
     </div>
     ${e.input_error ? `<div class="warnbox">${esc(e.input_error)}</div>` : ""}
+    <div class="card afk-diag" style="margin-bottom:16px">
+      <h3>${t("diag.heading")}</h3>
+      <p class="mute">${t("afk.diag_status")}: <b>${ST.diagnostics?.game_active ? t("diag.active") : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing"))}</b></p>
+      <p class="mute">${t("diag.foreground")}: <b>${esc(ST.diagnostics?.foreground_title || t("diag.none"))}</b>
+        (${esc(ST.diagnostics?.foreground_process || "—")})</p>
+      ${e.wait_reason ? `<p class="focus-warn">${esc(t("afk.reason_" + e.wait_reason))}</p>` : ""}
+      <div class="row" style="flex-wrap:wrap;gap:10px">
+        <button class="btn sm pri" data-act="ptest" data-target="fortnite" ${e.running || e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_button")}</button>
+        <button class="btn sm" data-act="ptest" data-target="notepad" ${e.running || e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_notepad")}</button>
+        <span class="mute">${t("afk.probe_help")}</span>
+      </div>
+      ${e.probe_status !== "idle" ? `<p class="mute">${t("afk.probe_status")}: ${esc(e.probe_target === "notepad" ? t("afk.probe_notepad_name") : "Fortnite")} — ${esc(t("afk.probe_" + e.probe_status))}
+        ${e.probe_status === "error" ? "— " + esc(e.probe_detail || "") : ""} ${e.probe_at ? " (" + esc(e.probe_at) + ")" : ""}</p>` : ""}
+      <p class="mute">${t("afk.probe_note")}</p>
+    </div>
     <div class="grid g2" style="align-items:start">
     <div class="card"><h3>${t("afk.mode")}</h3>
       ${f(t("afk.enabled"), tog("afk_enabled", c.afk_enabled))}
@@ -274,6 +289,8 @@ document.addEventListener("click", async ev => {
   const a = d.act, v = id => ($("#" + id) || {}).value || "";
   if (a === "theme") return patch({theme: ST.cfg.theme === "dark" ? "light" : "dark"});
   if (a === "start") { await api.start(); return tick(); }
+  if (a === "ptest") { const r = await api.input_probe_delayed(d.target || "fortnite");
+    toast(r.ok ? t("afk.probe_started") : t("afk.probe_stop_first")); return tick(); }
   if (a === "main") { const e = ST.engine; await (e.running ? api.pause() : api.start()); return tick(); }
   if (a === "stop") { await api.stop(); return tick(); }
   if (a === "reset") { await api.reset_stats(); return tick(); }

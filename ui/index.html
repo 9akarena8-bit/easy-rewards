@@ -3,16 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Easy Rewards</title>
-<meta name="theme-color" content="#0d0f12">
+<title>Fortnite Pirate Token</title>
+<meta name="theme-color" content="#0d0d0d">
 <link rel="icon" type="image/png" href="pirate_token.png">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="gold_ui.css">
 </head>
 <body>
 <div id="window-bar" class="window-bar">
   <div class="window-drag pywebview-drag-region" title="Перетащить окно">
     <img src="pirate_token.png" alt="" class="window-logo">
-    <span>Easy Rewards</span>
+    <span>Fortnite Pirate Token</span>
     <span class="window-drag-hint">⋮⋮</span>
   </div>
   <div class="window-actions">
@@ -23,11 +24,10 @@
 </div>
 <div id="app" aria-live="polite"><div id="boot-screen" class="boot-screen">
  <img src="pirate_token.png" alt="" class="boot-logo">
- <strong>Easy Rewards</strong><span>Подключение к приложению…</span>
+ <strong>Fortnite Pirate Token</strong><span>Подключение к приложению…</span>
  <small>Если соединение не установится, здесь появится описание ошибки.</small>
 </div></div>
 <script>
-// A persistent visible diagnostic: a script error must never become an empty window.
 if (new URLSearchParams(location.search).has('mini')) document.body.classList.add('mini');
 window.easyRewardsBootError = function(message) {
   var app = document.getElementById('app');
@@ -48,5 +48,6 @@ window.addEventListener('unhandledrejection', function(e) {
 });
 </script>
 <script src="app.js"></script>
+<script src="gold_ui.js"></script>
 </body>
 </html>

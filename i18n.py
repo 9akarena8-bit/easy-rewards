@@ -637,3 +637,67 @@ STRINGS['uk'].update({'nav.subscriptions': 'Підписки',
  'upd.banner_subtitle': 'Доступне оновлення; активний сеанс не переривається.',
  'upd.exit_install': 'Вийти й оновити',
  'upd.ready': 'Оновлення завантажено й перевірено. Вийдіть і встановіть його, коли буде зручно.'})
+
+# v1.3.3: explicit input diagnostics and a safe Windows-input probe.
+STRINGS['ru'].update({
+    'state.stopping': 'Останавливается', 'state.afk_disabled': 'Анти-АФК выключен',
+    'afk.diag_status': 'Fortnite', 'afk.diag_background': 'Окно найдено, не активно',
+    'afk.diag_missing': 'Окно не найдено',
+    'afk.reason_not_foreground': 'Переключись в Fortnite: движения отправляются только при активной игре.',
+    'afk.reason_not_found': 'Окно Fortnite не обнаружено. Открой игру и зайди в матч.',
+    'afk.reason_afk_disabled': 'Включи переключатель «Анти-АФК».',
+    'afk.probe_button': 'Проверить ввод через 3 секунды',
+    'afk.probe_help': 'После нажатия переключись в Fortnite. Тест удержит W на 0,3 с.',
+    'afk.probe_note': '«Отправлено» означает ответ Windows, а НЕ подтверждение движения в Fortnite. Программные нажатия могут игнорироваться игрой.',
+    'afk.probe_status': 'Последняя проверка', 'afk.probe_started': 'Переключись в Fortnite! Проверка через 3 секунды.',
+    'afk.probe_stop_first': 'Сначала останови движок Anti-AFK.',
+    'afk.probe_idle': 'Не проводилась', 'afk.probe_scheduled': 'Ожидание 3 секунды',
+    'afk.probe_busy': 'Движок или тест занят', 'afk.probe_waiting_window': 'Не обнаружено активное окно Fortnite',
+    'afk.probe_sent': 'Команда отправлена в Windows', 'afk.probe_error': 'Ошибка отправки',
+    'log.probe_result': 'Проверка ввода: {status}. {detail}',
+})
+STRINGS['en'].update({
+    'state.stopping': 'Stopping', 'state.afk_disabled': 'Anti-AFK disabled',
+    'afk.diag_status': 'Fortnite', 'afk.diag_background': 'Found, not foreground',
+    'afk.diag_missing': 'Window not found',
+    'afk.reason_not_foreground': 'Switch to Fortnite: controls only work while it is foreground.',
+    'afk.reason_not_found': 'Fortnite window not found. Open the game and enter a match.',
+    'afk.reason_afk_disabled': 'Enable the Anti-AFK switch.',
+    'afk.probe_button': 'Test input in 3 seconds',
+    'afk.probe_help': 'Switch to Fortnite after clicking. Test holds W for 0.3 seconds.',
+    'afk.probe_note': 'Sent means Windows accepted the event, NOT that Fortnite moved. The game may ignore synthetic events.',
+    'afk.probe_status': 'Last test', 'afk.probe_started': 'Switch to Fortnite! Testing in 3 seconds.',
+    'afk.probe_stop_first': 'Stop Anti-AFK first.',
+    'afk.probe_idle': 'Not tested', 'afk.probe_scheduled': 'Waiting 3 seconds',
+    'afk.probe_busy': 'Engine or test busy', 'afk.probe_waiting_window': 'Fortnite is not the foreground window',
+    'afk.probe_sent': 'Sent to Windows', 'afk.probe_error': 'Input error',
+    'log.probe_result': 'Input test: {status}. {detail}',
+})
+STRINGS['uk'].update({
+    'state.stopping': 'Зупиняється', 'state.afk_disabled': 'Анти-АФК вимкнено',
+    'afk.diag_status': 'Fortnite', 'afk.diag_background': 'Вікно знайдено, не активне',
+    'afk.diag_missing': 'Вікно не знайдено',
+    'afk.reason_not_foreground': 'Перейдіть у Fortnite: керування працює лише в активній грі.',
+    'afk.reason_not_found': 'Вікно Fortnite не знайдено. Запустіть гру.',
+    'afk.reason_afk_disabled': 'Увімкніть перемикач «Анти-АФК».',
+    'afk.probe_button': 'Тест введення через 3 секунди',
+    'afk.probe_help': 'Після натискання перейдіть у Fortnite. Тест утримає W на 0,3 с.',
+    'afk.probe_note': '«Надіслано» означає відповідь Windows, а не підтвердження руху у Fortnite. Гра може ігнорувати штучне введення.',
+    'afk.probe_status': 'Остання перевірка', 'afk.probe_started': 'Перейдіть у Fortnite! Тест через 3 секунди.',
+    'afk.probe_stop_first': 'Спочатку зупиніть анти-АФК.',
+    'afk.probe_idle': 'Не проводилась', 'afk.probe_scheduled': 'Очікування 3 секунди',
+    'afk.probe_busy': 'Двигун або тест зайнятий', 'afk.probe_waiting_window': 'Fortnite не є активним вікном',
+    'afk.probe_sent': 'Надіслано у Windows', 'afk.probe_error': 'Помилка введення',
+    'log.probe_result': 'Перевірка введення: {status}. {detail}',
+})
+
+STRINGS['ru']['afk.probe_notepad'] = 'Тест в Блокноте (W)'
+STRINGS['en']['afk.probe_notepad'] = 'Notepad input test (W)'
+STRINGS['uk']['afk.probe_notepad'] = 'Тест у Блокноті (W)'
+
+STRINGS['ru']['afk.probe_notepad_name'] = 'Блокнот'
+STRINGS['en']['afk.probe_notepad_name'] = 'Notepad'
+STRINGS['uk']['afk.probe_notepad_name'] = 'Блокнот'
+STRINGS['ru']['afk.probe_help'] = 'Выбери тест и за 3 секунды переключись в нужное окно. В игре W удерживается 0,3 с, в Блокноте печатается буква.'
+STRINGS['en']['afk.probe_help'] = 'Choose the test and focus the target window within 3 seconds. Fortnite holds W for 0.3 s; Notepad types one letter.'
+STRINGS['uk']['afk.probe_help'] = 'Оберіть тест і перейдіть у потрібне вікно за 3 секунди. У грі W утримується 0,3 с, у Блокноті вводиться літера.'
