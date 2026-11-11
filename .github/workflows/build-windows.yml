@@ -92,6 +92,8 @@ jobs:
             "publish=true" >> $env:GITHUB_OUTPUT
             Write-Host "Release $tag not found. Publish after successful build."
           }
+          # gh release view returns 1 when the tag is absent; this is expected.
+          exit 0
       - name: Publish Stable GitHub Release automatically
         if: steps.publication.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
