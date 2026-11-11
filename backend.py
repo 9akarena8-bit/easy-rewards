@@ -21,6 +21,7 @@ import treasure
 import release_updater
 import subscription_preview
 import support_report
+import discord_notifications
 import webbrowser
 from core import ROLES, Config, Engine, best_match, imread_unicode, load_templates
 from i18n import LANGS, STRINGS
@@ -67,6 +68,7 @@ class Backend:
         "prize_add", "prize_toggle", "prize_delete", "tracker_set", "tracker_export", "tracker_import",
         "tracker_reset", "update_check", "update_prepare", "update_install", "open_mini", "close_mini",
         "input_probe_delayed", "create_support_report", "open_support",
+        "discord_configure", "discord_test", "discord_clear",
     )
 
     def __init__(self, base, io, hooks: Hooks | None = None):
@@ -79,6 +81,7 @@ class Backend:
         self.tracker = Tracker(self.base / "tracker.json")
         self._log: collections.deque = collections.deque(maxlen=80)
         self._log_n = 0
+        self.discord = discord_notifications.DiscordNotifications(self.base / "discord_notifications.json")
         # Records calls that REACHED Python, including global F8/F10 hotkeys.
         self._control_sequence = 0
         self._control_action = "none"
@@ -102,6 +105,18 @@ class Backend:
     def log(self, key: str, /, **kw) -> None:
         self._log_n += 1
         self._log.append({"n": self._log_n, "t": time.strftime("%H:%M:%S"), "key": key, "kw": kw})
+        # Strict allowlist: Discord never receives log arguments, tokens, user data or paths.
+        self.discord.notify(key)
+
+    def discord_configure(self, webhook_url: str = "", enabled: bool = False) -> dict:
+        return self.discord.configure(webhook_url, enabled)
+
+    def discord_test(self) -> dict:
+        accepted = self.discord.notify("discord_test", test=True)
+        return {"ok": accepted, "error": "" if accepted else "Enable Discord notifications first"}
+
+    def discord_clear(self) -> dict:
+        return self.discord.clear()
 
     def _control_received(self, action: str) -> None:
         self._control_sequence += 1
@@ -188,6 +203,7 @@ class Backend:
             "version": self.version,
             "release_mode": self.release_mode,
             "support_contacts": support_report.contacts(),
+            "discord_notifications": self.discord.status(),
             "controls": {"last": self._control_action,
                          "time": self._control_time,
                          "sequence": self._control_sequence},
