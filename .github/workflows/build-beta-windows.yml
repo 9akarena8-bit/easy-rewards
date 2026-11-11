@@ -41,6 +41,7 @@ jobs:
         run: |
           node --check ui/app.js
           node --check ui/gold_ui.js
+          node --test tests/browser_controls.test.cjs
       - name: Build Windows executable
         shell: pwsh
         run: |
