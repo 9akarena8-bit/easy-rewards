@@ -541,7 +541,10 @@ document.addEventListener("click", async ev => {
     return tick();
   }
   if (a === "payment_draft") {
-    const result = await api.payment_interest_create(payPlan, payMethod, payMethod === "steam_items" ? payGame : "");
+    const skinNote = payMethod === "steam_items" && typeof window.skinpayDraftSelection === "function"
+      ? window.skinpayDraftSelection() : null;
+    const result = await api.payment_interest_create(
+      payPlan, payMethod, payMethod === "steam_items" ? payGame : "", skinNote);
     paymentDraft = result;
     toast(result.ok ? t("payments.draft_saved") : t("support.failed") + ": " + String(result.error || ""));
     await tick();
