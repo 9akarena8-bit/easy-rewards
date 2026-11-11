@@ -1,0 +1,13 @@
+{
+  "theme": "dark",
+  "ui_language": "ru",
+  "afk_enabled": true,
+  "afk_sequence_enabled": true,
+  "afk_pause_min": 0.5,
+  "afk_pause_max": 2.0,
+  "afk_camera_pixels_360": 1500,
+  "afk_pickaxe_enabled": false,
+  "afk_grenade_enabled": false,
+  "afk_weapon_enabled": false,
+  "require_foreground": true
+}

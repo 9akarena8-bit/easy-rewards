@@ -22,7 +22,7 @@ from i18n import tr
 #   start_*  : button that begins the next match (counts a game)
 #   result_* : any button on result / reward screens (continue, claim all, back to lobby)
 #   wait_*   : a loading / "connecting" screen - nothing is clicked and anti-AFK stays quiet
-ROLES = ("start", "result", "wait", "reward")
+ROLES = ("start", "result", "wait", "reward", "replay", "death")
 
 
 # ----------------------------------------------------------------- config
@@ -46,6 +46,20 @@ class Config:
     afk_interval: float = 6.0       # seconds between anti-AFK presses
     afk_hold: float = 3.0           # max seconds a key is held
     afk_keys: str = "wasd"
+    # Randomised, interruptible sequence of ordinary game inputs. Does not bypass anti-cheat.
+    afk_sequence_enabled: bool = True
+    afk_jump_enabled: bool = True
+    afk_sprint_enabled: bool = True
+    afk_slide_enabled: bool = True
+    afk_camera_enabled: bool = True
+    afk_slot_enabled: bool = True
+    afk_pickaxe_enabled: bool = False  # optional LMB; may interact with game objects
+    afk_grenade_enabled: bool = False  # optional Y + LMB
+    afk_weapon_enabled: bool = False   # optional bounded bursts; no ammo OCR
+    afk_pause_min: float = 0.5
+    afk_pause_max: float = 2.0
+    afk_camera_pixels_360: float = 1500.0  # calibrate for player's game sensitivity
+
 
     @classmethod
     def load(cls, path: Path) -> "Config":
@@ -150,11 +164,14 @@ class Engine:
         self._last_click = 0.0
         self._in_match = False
         self._result_seen = False
+        self._awaiting_replay = False
         self._next_afk = 0.0
         self.last_input = ""
         self.last_input_at = 0.0
         self.input_count = 0
         self.last_input_error = ""
+        self._last_afk_type = ""
+        self._last_slot = 0
 
     # ---- public controls (thread safe)
     @property
@@ -193,11 +210,12 @@ class Engine:
         self._stop.clear()
         self._paused.clear()
         self._tick_mark = time.monotonic()
-        self._next_afk = time.monotonic() + min(1.0, self._afk_wait())
+        self._next_afk = time.monotonic() + min(0.7, self._afk_wait())
         self.state = "starting"
         self.last_input_error = ""
         self._reward_visible = False
         self._reward_absent_since = None
+        self._awaiting_replay = False
         self._thread = threading.Thread(target=self._loop, name="engine", daemon=True)
         self._thread.start()
 
@@ -281,6 +299,128 @@ class Engine:
             self.last_input_error = repr(exc)
             self.log("log.error", err="input " + repr(exc))
 
+    def _smart_afk_action(self, should_abort: Callable[[], bool]) -> None:
+        """One weighted action; every IO operation must be abortable and release keys.
+
+        Does not infer ammo, item ownership, death or game state. Detection is
+        handled by optional screen templates in _tick(), never by guessing.
+        """
+        cfg = self.cfg
+        if not cfg.afk_enabled or should_abort():
+            return
+        eligible: list[tuple[str, int]] = [("move", 34)]
+        if hasattr(self.io, "hold_keys"):
+            eligible.append(("crouch", 4))
+        if cfg.afk_jump_enabled and hasattr(self.io, "hold_keys"):
+            eligible.append(("jump", 10))
+        if cfg.afk_sprint_enabled and hasattr(self.io, "hold_keys"):
+            eligible.extend((("sprint", 15), ("sprint_jump", 10) if cfg.afk_jump_enabled else ("sprint", 5)))
+        if cfg.afk_slide_enabled and cfg.afk_sprint_enabled and hasattr(self.io, "hold_keys"):
+            eligible.append(("slide", 10))
+            if cfg.afk_jump_enabled:
+                eligible.append(("slide_jump", 6))
+        if cfg.afk_camera_enabled and hasattr(self.io, "move_mouse_relative"):
+            eligible.extend((("yaw", 10), ("pitch", 8)))
+        if cfg.afk_slot_enabled and hasattr(self.io, "press_key"):
+            eligible.append(("slot", 7))
+        if cfg.afk_pickaxe_enabled and hasattr(self.io, "hold_mouse"):
+            eligible.append(("pickaxe", 3))
+        if cfg.afk_grenade_enabled and hasattr(self.io, "hold_mouse") and hasattr(self.io, "press_key"):
+            eligible.append(("grenade", 2))
+        if cfg.afk_weapon_enabled and hasattr(self.io, "aim_and_fire") and hasattr(self.io, "press_key"):
+            eligible.append(("weapon", 2))
+        # Avoid identical consecutive actions, not claim of anti-detection.
+        choices = [(name, weight) for name, weight in eligible if name != self._last_afk_type]
+        if not choices:
+            choices = eligible
+        action = random.choices([n for n, _ in choices], weights=[w for _, w in choices], k=1)[0]
+        hold_cap = max(.3, min(4.0, float(cfg.afk_hold)))
+        hold = random.uniform(.3, hold_cap)
+        label = action.upper()
+
+        def keys(*items: str, duration: float = hold) -> None:
+            # Old third-party IO stubs can keep movement support, but extended
+            # inputs require the new WinIO.hold_keys API.
+            if hasattr(self.io, "hold_keys"):
+                self.io.hold_keys(items, duration, should_abort)
+            elif len(items) == 1 and items[0] in "wasd":
+                self.io.hold_key(items[0], duration, should_abort)
+            elif all(k in "wasd" for k in items) and hasattr(self.io, "hold_combo"):
+                self.io.hold_combo("".join(items), duration, should_abort)
+            else:
+                raise RuntimeError("Update winio.py for extended anti-AFK actions")
+
+        try:
+            if action == "move":
+                directions = ["w", "a", "s", "d", "wa", "wd", "sa", "sd"]
+                available = [d for d in directions if all(k in cfg.afk_keys for k in d) and
+                             (len(d) == 1 or hasattr(self.io, "hold_keys") or hasattr(self.io, "hold_combo"))]
+                if not available:
+                    available = ["w"]
+                direction = random.choice(available)
+                keys(*direction)
+                label = "+".join(k.upper() for k in direction)
+            elif action == "crouch":
+                keys("ctrl", duration=random.uniform(.35, 1.3)); label = "CTRL"
+            elif action == "jump":
+                keys("space", duration=random.uniform(.1, .3)); label = "SPACE"
+            elif action == "sprint":
+                keys("w", "shift"); label = "W+SHIFT"
+            elif action == "sprint_jump":
+                keys("w", "shift", "space"); label = "W+SHIFT+SPACE"
+            elif action == "slide":
+                keys("w", "shift", "ctrl"); label = "W+SHIFT+CTRL"
+            elif action == "slide_jump":
+                keys("w", "shift", "ctrl", "space"); label = "W+SHIFT+CTRL+SPACE"
+            elif action == "yaw":
+                angle = random.randint(25, 360)
+                direction = random.choice((-1, 1))
+                px = round(float(cfg.afk_camera_pixels_360) * angle / 360) * direction
+                self.io.move_mouse_relative(px, 0, random.uniform(.2, 1.5), should_abort)
+                label = f"CAM {'R' if direction > 0 else 'L'} {angle}°"
+            elif action == "pitch":
+                angle = random.choice((45, 90, 90, 180))
+                direction = random.choice((-1, 1))
+                # Relative mouse travel is only an approximation of degrees;
+                # pitch clamping means the return can be imperfect.
+                px = round(float(cfg.afk_camera_pixels_360) * angle / 360)
+                self.io.move_mouse_relative(0, px * direction, random.uniform(.2, .65), should_abort)
+                if not should_abort():
+                    time.sleep(.08)
+                    self.io.move_mouse_relative(0, -px * direction, random.uniform(.2, .65), should_abort)
+                label = f"CAM {'DOWN' if direction > 0 else 'UP'} {angle}° + CENTER"
+            elif action == "slot":
+                slots = [n for n in range(1, 7) if n != self._last_slot]
+                self._last_slot = random.choice(slots)
+                self.io.press_key(str(self._last_slot))
+                label = f"SLOT {self._last_slot}"
+            elif action == "pickaxe":
+                # Only clicks when the user explicitly enables the action.
+                self.io.hold_mouse("left", random.uniform(.12, .7), should_abort)
+                label = "PICKAXE LMB"
+            elif action == "grenade":
+                self.io.press_key("y")
+                if not should_abort():
+                    self.io.hold_mouse("left", random.uniform(.08, .2), should_abort)
+                label = "Y + LMB"
+            elif action == "weapon":
+                self.io.press_key("2")
+                if not should_abort():
+                    # Ammo count recognition is not implemented. Hard cap burst.
+                    self.io.aim_and_fire(random.uniform(.35, 1.5), should_abort)
+                label = "SLOT 2 + RMB + LMB (BOUNDED)"
+            if should_abort():
+                return
+            self.last_input = label
+            self._last_afk_type = action
+            self.last_input_at = time.monotonic()
+            self.input_count += 1
+            self.last_input_error = ""
+            self.log("log.afk_action", action=label)
+        except Exception as exc:
+            self.last_input_error = repr(exc)
+            self.log("log.error", err="smart AFK: " + repr(exc))
+
     def _scan_reward(self, match: tuple[float, tuple[int, int], Template] | None, now: float) -> bool:
         """Count rising edge only. Brief disappearances do not count as another popup."""
         seen = bool(match and match[0] >= self.cfg.threshold)
@@ -306,7 +446,26 @@ class Engine:
         return seen
 
     def _afk_wait(self) -> float:
+        if self.cfg.afk_sequence_enabled:
+            lo = max(.2, float(self.cfg.afk_pause_min))
+            hi = max(lo, float(self.cfg.afk_pause_max))
+            return random.uniform(lo, hi)
         return max(1.0, self.cfg.afk_interval * random.uniform(0.7, 1.3))
+
+    def _run_afk_if_due(self, now: float) -> None:
+        cfg = self.cfg
+        if not cfg.afk_enabled or now < self._next_afk:
+            return
+        def abort() -> bool:
+            return (self._stop.is_set() or self._paused.is_set() or
+                    ((cfg.require_foreground or cfg.afk_sequence_enabled) and
+                     not self.io.game_in_foreground()))
+        if cfg.afk_sequence_enabled:
+            self._smart_afk_action(abort)
+        else:
+            self._afk_actions(abort)
+        self._next_afk = time.monotonic() + self._afk_wait()
+
 
     def _loop(self) -> None:
         while not self._stop.is_set():
@@ -326,7 +485,7 @@ class Engine:
 
     def _tick(self) -> None:
         cfg = self.cfg
-        if cfg.require_foreground and not self.io.game_in_foreground():
+        if (cfg.require_foreground or cfg.afk_sequence_enabled) and not self.io.game_in_foreground():
             if cfg.auto_focus:
                 self.io.focus_game()
                 self._stop.wait(0.3)
@@ -340,10 +499,7 @@ class Engine:
             # capturing the screen just to perform a simple keyboard action.
             self.state = "afk_only"
             now = time.monotonic()
-            if cfg.afk_enabled and cfg.afk_keys and now >= self._next_afk:
-                self._afk_actions(lambda: self._stop.is_set() or self._paused.is_set() or
-                                  (cfg.require_foreground and not self.io.game_in_foreground()))
-                self._next_afk = time.monotonic() + self._afk_wait()
+            self._run_afk_if_due(now)
             return
 
         frame = self.io.grab()
@@ -351,13 +507,32 @@ class Engine:
 
         best = None
         reward_match = None
+        replay_match = None
+        death_match = None
         for tpl in self.templates:
             score, pos = best_match(gray, tpl.gray, cfg.scales)
+            match = (score, pos, tpl)
             if tpl.role == "reward":
                 if reward_match is None or score > reward_match[0]:
-                    reward_match = (score, pos, tpl)
+                    reward_match = match
+            elif tpl.role == "replay":
+                if replay_match is None or score > replay_match[0]:
+                    replay_match = match
+            elif tpl.role == "death":
+                if death_match is None or score > death_match[0]:
+                    death_match = match
             elif best is None or score > best[0]:
-                best = (score, pos, tpl)
+                best = match
+        # Explicit death and replay templates outrank other incidental matches.
+        if death_match and death_match[0] >= cfg.threshold:
+            self._awaiting_replay = True
+        if replay_match and replay_match[0] >= cfg.threshold:
+            best = replay_match
+        elif self._awaiting_replay:
+            self.state = "await_replay"
+            self._next_afk = time.monotonic() + self._afk_wait()
+            self.score = death_match[0] if death_match else 0.0
+            return
         self.score = max(0.0, best[0] if best else (reward_match[0] if reward_match else 0.0))
 
         now = time.monotonic()
@@ -368,7 +543,7 @@ class Engine:
             return
         if best and best[0] >= cfg.threshold:
             # If focus changes during image matching, never click a different app.
-            if cfg.require_foreground and not self.io.game_in_foreground():
+            if (cfg.require_foreground or cfg.afk_sequence_enabled) and not self.io.game_in_foreground():
                 self.state = "waiting_window"
                 return
             if now - self._last_click < cfg.click_delay:
@@ -380,7 +555,8 @@ class Engine:
             self._last_click = now
             self._next_afk = now + self._afk_wait()
             tpl = best[2]
-            if tpl.role == "start":
+            if tpl.role in ("start", "replay"):
+                self._awaiting_replay = False
                 self.games += 1
                 self.game_times.append(time.time())
                 self._in_match = True
@@ -402,9 +578,4 @@ class Engine:
             return
         # no known button on screen -> we are in a match (or somewhere unknown)
         self.state = "in_match" if self._in_match else "idle"
-        if cfg.afk_enabled and cfg.afk_keys and now >= self._next_afk:
-            def abort() -> bool:
-                return (self._stop.is_set() or self._paused.is_set() or
-                        (cfg.require_foreground and not self.io.game_in_foreground()))
-            self._afk_actions(abort)
-            self._next_afk = time.monotonic() + self._afk_wait()
+        self._run_afk_if_due(now)

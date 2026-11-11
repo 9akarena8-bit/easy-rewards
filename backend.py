@@ -30,8 +30,13 @@ NUM_LIMITS = {          # key: (type, lo, hi)
     "click_delay": (float, 0.0, 30.0),
     "afk_interval": (float, 1.0, 120.0),
     "afk_hold": (float, 0.1, 10.0),
+    "afk_pause_min": (float, 0.2, 10.0),
+    "afk_pause_max": (float, 0.2, 10.0),
+    "afk_camera_pixels_360": (float, 100.0, 12000.0),
 }
-BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled")
+BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
+         "afk_slide_enabled", "afk_camera_enabled", "afk_slot_enabled", "afk_pickaxe_enabled",
+         "afk_grenade_enabled", "afk_weapon_enabled")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
         "theme": ("light", "dark"), "ui_language": LANGS}
 SHOT_MAX_W = 1600
@@ -209,6 +214,12 @@ class Backend:
                     rejected.append(k)
             except (TypeError, ValueError):
                 rejected.append(k)
+        # Keep the pause range valid even if only one endpoint was edited.
+        if self.cfg.afk_pause_min > self.cfg.afk_pause_max:
+            if "afk_pause_min" in (patch or {}):
+                self.cfg.afk_pause_max = self.cfg.afk_pause_min
+            else:
+                self.cfg.afk_pause_min = self.cfg.afk_pause_max
         self._save_cfg()
         return {"ok": not rejected, "rejected": rejected}
 

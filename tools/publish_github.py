@@ -10,7 +10,8 @@ from pathlib import Path
 
 BASE=Path(__file__).resolve().parents[1]
 REPO='https://github.com/9akarena8-bit/easy-rewards.git'
-BRANCH='feature/easyrewards-v1.2.4'
+VERSION = (BASE / 'VERSION').read_text(encoding='utf-8').strip()
+BRANCH = f'feature/easyrewards-v{VERSION}'
 SKIP_DIRS={'.git','.venv','.buildenv','.pytest_cache','__pycache__','dist','build','release',
            'legacy','_backup','.idea','.vscode'}
 SKIP_FILES={'config.json','tracker.json','treasure.json','rewards.json','crash.log',
@@ -45,11 +46,11 @@ def publish():
         status=subprocess.run(['git','status','--porcelain'],cwd=checkout,capture_output=True,text=True,check=True)
         if not status.stdout.strip():
             print('No changes; all code is already in GitHub.');return
-        run('git','commit','-m','Prepare Easy Rewards 1.2.4: GitHub updater, UI, translations',cwd=checkout)
+        run('git','commit','-m',f'Prepare Easy Rewards {VERSION}: randomized movement and replay templates',cwd=checkout)
         run('git','push','-u','origin',BRANCH,cwd=checkout)
         print('\nUpload successful! Open a pull request:')
         print(f'https://github.com/9akarena8-bit/easy-rewards/compare/main...{BRANCH}?expand=1')
-        print('Merge after reviewing. Then publish tag v1.2.4 to build the installer release.')
+        print(f'Merge after reviewing. Then publish tag v{VERSION} to build the installer release.')
 
 if __name__=='__main__':
     try:publish()

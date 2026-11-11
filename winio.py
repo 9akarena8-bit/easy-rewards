@@ -46,7 +46,9 @@ INPUT_MOUSE, INPUT_KEYBOARD = 0, 1
 KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE = 0x0002, 0x0008
 MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP = 0x0002, 0x0004
 MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP = 0x0008, 0x0010
+MOUSEEVENTF_MOVE = 0x0001
 SCANCODES = {"w": 0x11, "a": 0x1E, "s": 0x1F, "d": 0x20, " ": 0x39,
+             "space": 0x39, "shift": 0x2A, "ctrl": 0x1D, "y": 0x15,
              "1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06, "6": 0x07}
 VK = {"F7": 0x76, "F8": 0x77, "F9": 0x78, "F10": 0x79}
 
@@ -147,6 +149,95 @@ class WinIO:
                 time.sleep(min(0.05, max(0.0, end - time.monotonic())))
         finally:
             _key(scan, up=True)
+
+    def hold_keys(self, keys, seconds: float, should_abort: Callable[[], bool]) -> None:
+        """Send a timed combo, press keys in order and always release in reverse."""
+        names = list(dict.fromkeys(str(k).lower() for k in keys))
+        scans = []
+        for name in names:
+            if name not in SCANCODES:
+                raise ValueError("Unsupported combo key: " + repr(name))
+            scans.append(SCANCODES[name])
+        held = []
+        if should_abort():
+            return
+        try:
+            for scan in scans:
+                if should_abort():
+                    return
+                _key(scan, up=False)
+                held.append(scan)
+                # Ensure W / Shift / Ctrl have time to register as a sequence.
+                if len(scans) > 1:
+                    for _ in range(3):
+                        if should_abort():
+                            return
+                        time.sleep(.018)
+            end = time.monotonic() + max(0.0, float(seconds))
+            while time.monotonic() < end and not should_abort():
+                time.sleep(min(.03, end - time.monotonic()))
+        finally:
+            for scan in reversed(held):
+                try:
+                    _key(scan, up=True)
+                except OSError:
+                    pass
+
+    def move_mouse_relative(self, dx: int, dy: int, seconds: float,
+                            should_abort: Callable[[], bool]) -> None:
+        """Relative mouse motion for camera controls, not cursor repositioning."""
+        steps = max(1, min(120, int(max(.05, seconds) / .018)))
+        interval = max(.008, float(seconds) / steps)
+        sent_x = sent_y = 0
+        for index in range(1, steps + 1):
+            if should_abort():
+                return
+            x = round(int(dx) * index / steps)
+            y = round(int(dy) * index / steps)
+            diff_x, diff_y = x - sent_x, y - sent_y
+            if diff_x or diff_y:
+                _send(INPUT(INPUT_MOUSE, _INPUTUNION(mi=MOUSEINPUT(diff_x, diff_y, 0, MOUSEEVENTF_MOVE, 0, 0))))
+                sent_x, sent_y = x, y
+            end = time.monotonic() + interval
+            while not should_abort() and time.monotonic() < end:
+                time.sleep(min(.02, end - time.monotonic()))
+
+    def hold_mouse(self, button: str, seconds: float,
+                   should_abort: Callable[[], bool]) -> None:
+        buttons = {"left": (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
+                   "right": (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP)}
+        if button not in buttons:
+            raise ValueError("Unsupported mouse button: " + str(button))
+        if should_abort():
+            return
+        down, up = buttons[button]
+        _mouse(down)
+        try:
+            end = time.monotonic() + max(0.0, float(seconds))
+            while not should_abort() and time.monotonic() < end:
+                time.sleep(min(.03, end - time.monotonic()))
+        finally:
+            _mouse(up)
+
+    def aim_and_fire(self, seconds: float, should_abort: Callable[[], bool]) -> None:
+        """Hold RMB and LMB together; bounded duration, not ammo-aware."""
+        if should_abort():
+            return
+        _mouse(MOUSEEVENTF_RIGHTDOWN)
+        left_down = False
+        try:
+            time.sleep(.06)
+            if should_abort():
+                return
+            _mouse(MOUSEEVENTF_LEFTDOWN)
+            left_down = True
+            end = time.monotonic() + max(0.0, float(seconds))
+            while not should_abort() and time.monotonic() < end:
+                time.sleep(min(.03, end - time.monotonic()))
+        finally:
+            if left_down:
+                _mouse(MOUSEEVENTF_LEFTUP)
+            _mouse(MOUSEEVENTF_RIGHTUP)
 
     def foreground_title(self) -> str:
         """Title of the active window; used only for diagnostics."""
