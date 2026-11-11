@@ -106,7 +106,8 @@ class Backend:
         self._log_n += 1
         self._log.append({"n": self._log_n, "t": time.strftime("%H:%M:%S"), "key": key, "kw": kw})
         # Strict allowlist: Discord never receives log arguments, tokens, user data or paths.
-        self.discord.notify(key)
+        elapsed = int(self.engine.runtime) if key == "log.stopped" and hasattr(self, "engine") else None
+        self.discord.notify(key, runtime_seconds=elapsed)
 
     def discord_configure(self, webhook_url: str = "", enabled: bool = False) -> dict:
         return self.discord.configure(webhook_url, enabled)
