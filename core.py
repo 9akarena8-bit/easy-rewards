@@ -183,6 +183,10 @@ class Engine:
         self.probe_at = ""
         self.probe_target = ""
         self._probe_lock = threading.Lock()
+        # Screen capture and OpenCV must NEVER block the control loop.
+        # A single daemon analysis job can outlive a stop, but it never sends inputs.
+        self._screen_job: dict | None = None
+        self._screen_epoch = 0
         self._next_focus_attempt = 0.0
         self.focus_result = ""
         self._restart_pending = False
@@ -242,6 +246,7 @@ class Engine:
         if n == 0:
             self.log("log.afk_only")
         self.log("log.started", n=n, lang=self.cfg.language)
+        self._screen_epoch += 1
         self._stop.clear()
         self._paused.clear()
         self._tick_mark = time.monotonic()
@@ -279,6 +284,7 @@ class Engine:
             self.state = "stopped"
             return
         self._stop.set()
+        self._screen_epoch += 1
         self._restart_pending = False
         self.state = "stopping"
         if thread is threading.current_thread():
@@ -289,6 +295,7 @@ class Engine:
     def toggle_pause(self) -> None:
         if not self.running or self._stop.is_set():
             return
+        self._screen_epoch += 1  # Never reuse a pre-pause screenshot after resuming.
         if self.paused:
             self._tick_mark = time.monotonic()
             self._paused.clear()
@@ -631,6 +638,80 @@ class Engine:
         self.log("log.replay_clicked", source=source, attempt=self.replay_attempts)
         return True
 
+    def _capture_and_match(self, templates: tuple[Template, ...], scales: tuple[float, ...],
+                           scan_yellow: bool, epoch: int) -> tuple:
+        """Pure screen analysis. May run slowly, but NEVER clicks or presses keys."""
+        frame = self.io.grab()
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if templates else None
+        best = reward_match = replay_match = death_match = None
+        for tpl in templates:
+            if self._stop.is_set() or epoch != self._screen_epoch:
+                break
+            score, pos = best_match(
+                gray, tpl.gray, scales,
+                lambda: self._stop.is_set() or epoch != self._screen_epoch)
+            match = (score, pos, tpl)
+            if tpl.role == "reward":
+                if reward_match is None or score > reward_match[0]:
+                    reward_match = match
+            elif tpl.role == "replay":
+                if replay_match is None or score > replay_match[0]:
+                    replay_match = match
+            elif tpl.role == "death":
+                if death_match is None or score > death_match[0]:
+                    death_match = match
+            elif best is None or score > best[0]:
+                best = match
+        yellow = yellow_replay_button(frame) if scan_yellow and not (
+            replay_match and replay_match[0] >= self.cfg.threshold) and not (
+                self._stop.is_set() or epoch != self._screen_epoch) else None
+        return frame.shape, best, reward_match, replay_match, death_match, yellow
+
+    def _read_screen_without_blocking_controls(self, templates: tuple[Template, ...],
+                                               scan_yellow: bool) -> tuple | None:
+        """Return the last completed frame or None; cancellation is always responsive.
+
+        The analysis is confined to at most ONE daemon worker, even if ImageGrab
+        stalls permanently. A newly started session never consumes an old frame.
+        """
+        job = self._screen_job
+        epoch = self._screen_epoch
+        if job is not None and job["epoch"] != epoch:
+            if job["done"].is_set():
+                self._screen_job = job = None  # Discard a pre-stop/pause frame.
+            else:
+                self.wait_reason = "capture_slow"
+                return None
+        if job is None:
+            job = {"epoch": epoch, "started": time.monotonic(),
+                   "done": threading.Event(), "value": None, "error": None}
+            self._screen_job = job
+            scales = tuple(self.cfg.scales)
+            def analyze():
+                try:
+                    job["value"] = self._capture_and_match(templates, scales, scan_yellow, epoch)
+                except Exception as exc:
+                    job["error"] = exc
+                finally:
+                    job["done"].set()
+            threading.Thread(target=analyze, daemon=True, name="screen-analysis").start()
+        # 0.20 s at most; frequently check F8 and pause while OpenCV works.
+        for _ in range(10):
+            if self._stop.is_set() or self._paused.is_set():
+                return None
+            if job["done"].wait(.02):
+                break
+        if not job["done"].is_set():
+            if time.monotonic() - job["started"] >= 3.0:
+                self.wait_reason = "capture_slow"
+            return None
+        self._screen_job = None
+        if self._stop.is_set() or self._paused.is_set() or job["epoch"] != self._screen_epoch:
+            return None
+        if job["error"] is not None:
+            raise job["error"]
+        return job["value"]
+
     def _tick(self) -> None:
         if self._stop.is_set() or self._paused.is_set():
             return
@@ -669,33 +750,17 @@ class Engine:
             self.state = "afk_only"
             self._run_afk_if_due(time.monotonic())
             return
-        frame = self.io.grab()
+        analysis = self._read_screen_without_blocking_controls(tuple(self.templates), scan_yellow)
         if self._stop.is_set() or self._paused.is_set():
             return
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if has_templates else None
-        best = None
-        reward_match = None
-        replay_match = None
-        death_match = None
-        for tpl in self.templates:
-            if self._stop.is_set() or self._paused.is_set():
-                return
-            score, pos = best_match(gray, tpl.gray, cfg.scales,
-                                    lambda: self._stop.is_set() or self._paused.is_set())
-            match = (score, pos, tpl)
-            if tpl.role == "reward":
-                if reward_match is None or score > reward_match[0]:
-                    reward_match = match
-            elif tpl.role == "replay":
-                if replay_match is None or score > replay_match[0]:
-                    replay_match = match
-            elif tpl.role == "death":
-                if death_match is None or score > death_match[0]:
-                    death_match = match
-            elif best is None or score > best[0]:
-                best = match
-        if self._stop.is_set() or self._paused.is_set():
+        if analysis is None:
+            # Keep AFK input alive when screenshot capture is slow, provided
+            # Fortnite is STILL foreground. Never click an unverified frame.
+            self.state = "capture_waiting"
+            self._run_afk_if_due(time.monotonic())
             return
+        frame_shape, best, reward_match, replay_match, death_match, yellow_found = analysis
+        self.wait_reason = ""
         now = time.monotonic()
         # A saved replay template takes precedence; the yellow-button shape is
         # a conservative built-in fallback with 3-frame confirmation.
@@ -705,7 +770,7 @@ class Engine:
         if replay_match and replay_match[0] >= cfg.threshold:
             replay_position, replay_score, replay_source = replay_match[1], replay_match[0], "template"
         elif scan_yellow:
-            found = yellow_replay_button(frame)
+            found = yellow_found
             if found is not None:
                 replay_score, replay_position = found
                 replay_source = "yellow"
@@ -749,8 +814,8 @@ class Engine:
             self._next_afk = now + 1.0
             self.replay_status = "seen"
             if self._replay_candidate_pos is not None and \
-               abs(replay_position[0]-self._replay_candidate_pos[0]) < max(25, frame.shape[1] * .04) and \
-               abs(replay_position[1]-self._replay_candidate_pos[1]) < max(20, frame.shape[0] * .04):
+               abs(replay_position[0]-self._replay_candidate_pos[0]) < max(25, frame_shape[1] * .04) and \
+               abs(replay_position[1]-self._replay_candidate_pos[1]) < max(20, frame_shape[0] * .04):
                 self._replay_candidate_hits += 1
             else:
                 self._replay_candidate_hits = 1

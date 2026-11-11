@@ -194,16 +194,12 @@ def test_quick_f7_after_f8_is_queued_until_previous_worker_exits(tmp_path):
         assert io.entered.wait(2)
         first_thread = eng._thread
         eng.stop()
-        assert eng.state == 'stopping'
-        eng.start()  # F7 immediately after F8
-        assert eng._restart_pending
-        io.release.set()
-        for _ in range(90):
-            if eng._thread is not first_thread and eng.running:
-                break
-            time.sleep(.03)
+        assert eng.state == 'stopped'
+        assert not eng.running
+        eng.start()  # F7 immediately after F8 starts a fresh control loop.
         assert eng._thread is not first_thread
         assert eng.running
+        io.release.set()
     finally:
         eng.stop()
         if eng._thread is not None:

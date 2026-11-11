@@ -28,7 +28,7 @@ def test_ui_avoids_periodic_full_rebuild_and_preserves_scroll():
     assert "savedNavScroll" in gold
     assert "release_news" in gold
     assert 'data-act="stop"' in gold
-    assert 'data-act="main"' in gold
+    assert 'data-act="pause"' in gold
 
 
 def test_news_parses_only_valid_published_releases(monkeypatch):
@@ -84,7 +84,29 @@ def test_cleanup_only_removes_downloads_up_to_current_version(monkeypatch, tmp_p
 
 def test_installer_version_and_publish_scripts_consistent():
     version = (ROOT / "VERSION").read_text().strip()
-    assert version == "1.3.5"
+    assert version == "1.3.7"
     assert f'#define AppVersion "{version}"' in (ROOT / "installer.iss").read_text(encoding="utf-8")
     assert f"v{version}" in (ROOT / "TAG_RELEASE.bat").read_text(encoding="utf-8")
     assert "Flags: nowait" in (ROOT / "installer.iss").read_text(encoding="utf-8")
+
+
+def test_github_release_api_uses_json_accept_header(monkeypatch):
+    """The news feed is JSON just like /releases/latest (HTTP 415 regression)."""
+    requests = []
+    def fake_urlopen(req, timeout=None):
+        requests.append(req)
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def read(self, n=-1):
+                return b"[]"
+        return Response()
+    monkeypatch.setattr(release_updater, "urlopen", fake_urlopen)
+    release_updater.release_news()
+    assert requests
+    assert requests[0].get_header("Accept") == "application/vnd.github+json"
+    assert requests[0].get_header("X-github-api-version") == "2022-11-28"
+    release_updater._urlopen("https://github.com/9akarena8-bit/easy-rewards/releases/download/v1.3.6/installer.exe")
+    assert requests[1].get_header("Accept") == "application/octet-stream"

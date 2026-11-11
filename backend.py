@@ -59,7 +59,7 @@ class Hooks:
 
 class Backend:
     API = (
-        "state", "strings", "start", "stop", "pause", "reset_stats", "set_config",
+        "state", "strings", "start", "stop", "pause", "focus_game_now", "reset_stats", "set_config",
         "templates", "delete_template", "capture_screenshot", "save_template", "test_templates",
         "counter_add", "counter_set", "counter_edit", "counter_new", "counter_delete", "tokens_add",
         "prize_add", "prize_toggle", "prize_delete", "tracker_set", "tracker_export", "tracker_import",
@@ -77,6 +77,10 @@ class Backend:
         self.tracker = Tracker(self.base / "tracker.json")
         self._log: collections.deque = collections.deque(maxlen=80)
         self._log_n = 0
+        # Records calls that REACHED Python, including global F8/F10 hotkeys.
+        self._control_sequence = 0
+        self._control_action = "none"
+        self._control_time = ""
         self.reward_stats = RewardStats(self.base / "rewards.json")
         self.engine = Engine(self.cfg, io, self.templates_root, log=self.log,
                              on_reward=self.reward_stats.increment)
@@ -96,6 +100,11 @@ class Backend:
     def log(self, key: str, /, **kw) -> None:
         self._log_n += 1
         self._log.append({"n": self._log_n, "t": time.strftime("%H:%M:%S"), "key": key, "kw": kw})
+
+    def _control_received(self, action: str) -> None:
+        self._control_sequence += 1
+        self._control_action = action
+        self._control_time = time.strftime("%H:%M:%S")
 
     def strings(self, lang: str | None = None) -> dict:
         lang = lang if lang in LANGS else self.cfg.ui_language
@@ -153,6 +162,9 @@ class Backend:
         return {
             "version": self.version,
             "release_mode": self.release_mode,
+            "controls": {"last": self._control_action,
+                         "time": self._control_time,
+                         "sequence": self._control_sequence},
             "cfg": {k: getattr(self.cfg, k) for k in Config.__dataclass_fields__},
             "engine": {"state": ("stopping" if e.stopping else "paused" if e.paused and e.running else e.state), "running": e.running, "paused": e.paused, "score": round(e.score, 3),
                        "games": e.games, "cycles": e.cycles, "rewards": e.rewards, "runtime": int(e.runtime),
@@ -189,10 +201,12 @@ class Backend:
 
     # ------------------------------------------------------------ engine controls
     def start(self) -> None:
+        self._control_received("start")
         self.engine.start()
 
     def input_probe_delayed(self, target: str = "fortnite") -> dict:
         """Schedule a test while the user switches to the target window."""
+        self._control_received("probe_" + str(target))
         if target not in ("fortnite", "notepad"):
             return {"ok": False, "reason": "invalid_target"}
         if self.engine.running:
@@ -209,10 +223,26 @@ class Backend:
         return {"ok": True}
 
     def stop(self) -> None:
+        self._control_received("stop")
         self.engine.stop()
 
     def pause(self) -> None:
+        self._control_received("pause")
         self.engine.toggle_pause()
+
+    def focus_game_now(self) -> dict:
+        """Switch only to a verified Fortnite window, if Windows permits it."""
+        self._control_received("focus")
+        try:
+            if not hasattr(self.io, "game_window_found") or not self.io.game_window_found():
+                self.engine.focus_result = "not_found"
+                return {"ok": False, "reason": "not_found"}
+            focused = bool(self.io.game_in_foreground() or self.io.focus_game())
+            self.engine.focus_result = "focused" if focused else "denied"
+            return {"ok": focused, "reason": "focused" if focused else "denied"}
+        except Exception as exc:
+            self.engine.focus_result = "error: " + repr(exc)
+            return {"ok": False, "reason": "error", "detail": repr(exc)}
 
     def reset_stats(self) -> None:
         self.engine.reset_stats()

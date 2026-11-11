@@ -18,7 +18,7 @@ const languageButton = l => `<button class="${ST.cfg.ui_language === l ? "on" : 
 
 async function init() {
   document.body.classList.toggle("mini", MINI);
-  ST = await api.state(); await loadStrings(); await tick(); setInterval(tick, 400);
+  ST = await api.state(); await loadStrings(); await tick(); setInterval(tick, 800);
 }
 async function loadStrings() { S = await api.strings(ST.cfg.ui_language); document.documentElement.lang = ST.cfg.ui_language; }
 async function tick() {
@@ -40,9 +40,51 @@ function refreshLiveMetrics() {
     if (node.textContent !== value) node.textContent = value;
   });
 }
+// Critical controls execute on pointerdown, BEFORE DOM rebuild/click bubbling.
+// Their confirmation remains visible even if the normal click event is lost.
+const CONTROL_ACTIONS = new Set(["start", "stop", "pause", "main", "focusgame", "ptest"]);
+let lastPointerControl = null;
+const controlUi = (ru, en, uk) => ({ru, en, uk})[ST?.cfg?.ui_language || "ru"] || ru;
+async function runControlAction(action, target = "fortnite") {
+  const name = action === "ptest" ? "TEST " + target : action.toUpperCase();
+  toast(controlUi("Команда отправлена: ", "Command sent: ", "Команду надіслано: ") + name);
+  try {
+    let op;
+    if (action === "main") op = ST?.engine?.running ? api.pause() : api.start();
+    else if (action === "focusgame") op = api.focus_game_now();
+    else if (action === "ptest") op = api.input_probe_delayed(target);
+    else op = api[action]();
+    // A hung pywebview API call must not leave the user without feedback.
+    const result = await Promise.race([
+      op,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Python API timeout")), 5000))
+    ]);
+    if (result && result.ok === false) {
+      const reason = result.reason || "unknown";
+      toast(action === "focusgame" && S["afk.focus_" + reason]
+        ? t("afk.focus_" + reason)
+        : controlUi("Команда отклонена: ", "Command rejected: ", "Команду відхилено: ") + reason);
+    } else {
+      toast(action === "focusgame" ? t("afk.focus_ok")
+        : controlUi("Python получил команду: ", "Python acknowledged: ", "Python отримав команду: ") + name);
+    }
+  } catch (err) {
+    toast(controlUi("Нет ответа от Python: ", "Python did not respond: ", "Немає відповіді Python: ")
+      + String(err?.message || err));
+  }
+  // Polling and input events must stay separate. Never block the next click.
+  void tick();
+}
 // Mouse down -> click must target the same DOM node. Rebuilding it mid-click
 // makes Stop/Pause intermittently unclickable on slower WebView2 machines.
-document.addEventListener("pointerdown", () => { pointerIsDown = true; }, true);
+document.addEventListener("pointerdown", ev => {
+  pointerIsDown = true;
+  if (ev.button !== 0) return;
+  const btn = ev.target?.closest?.("button[data-act]");
+  if (!btn || btn.disabled || !CONTROL_ACTIONS.has(btn.dataset.act)) return;
+  lastPointerControl = {element: btn, at: Date.now()};
+  void runControlAction(btn.dataset.act, btn.dataset.target || "fortnite");
+}, true);
 document.addEventListener("pointerup", () => { pointerIsDown = false; setTimeout(() => render(), 0); }, true);
 document.addEventListener("pointercancel", () => { pointerIsDown = false; }, true);
 function render(force) {
@@ -98,7 +140,7 @@ const PAGE = {
       <div class="control-buttons">
         <button class="start-square" data-act="start" ${e.running ? "disabled" : ""}><span>▶</span><strong>${t("btn.start")}</strong></button>
         <button class="btn control-stop" data-act="stop" ${!e.running ? "disabled" : ""}>■ &nbsp;${t("btn.stop")}</button>
-        <button class="btn control-pause" data-act="main" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} &nbsp;${e.paused ? t("btn.resume") : t("btn.pause")}</button>
+        <button class="btn control-pause" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} &nbsp;${e.paused ? t("btn.resume") : t("btn.pause")}</button>
       </div>
       <div class="control-footer"><button class="btn sm" data-act="reset">${t("btn.reset")}</button><small>${t("hotkeys")}</small></div></div>
     <div class="card stats-card"><h3>${t("home.session_stats")}</h3><div class="grid g4"><div class="stat"><b>${e.games}</b><span>${t("stat.games")}</span></div>
@@ -132,7 +174,7 @@ const PAGE = {
     <div class="row" style="margin-bottom:14px;flex-wrap:wrap">
       <button class="btn pri" data-act="start" ${e.running ? "disabled" : ""}>▶ ${t("btn.start")}</button>
       <button class="btn" data-act="stop" ${!e.running ? "disabled" : ""}>■ ${t("btn.stop")}</button>
-      <button class="btn" data-act="main" ${!e.running ? "disabled" : ""}>${e.paused ? t("btn.resume") : t("btn.pause")}</button>
+      <button class="btn" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? t("btn.resume") : t("btn.pause")}</button>
       <span class="badge">${t("afk.total")}: ${e.input_count}</span>
       <span class="badge">${t("afk.last")}: ${esc(e.last_input || "—")}</span>
     </div>
@@ -142,10 +184,13 @@ const PAGE = {
       <p class="mute">${t("afk.diag_status")}: <b>${ST.diagnostics?.game_active ? t("diag.active") : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing"))}</b></p>
       <p class="mute">${t("diag.foreground")}: <b>${esc(ST.diagnostics?.foreground_title || t("diag.none"))}</b>
         (${esc(ST.diagnostics?.foreground_process || "—")})</p>
+      <p class="mute">${t("afk.last_control")}: <b>${esc(ST.controls?.last || "—")}</b>
+        ${esc(ST.controls?.time || "")} (${Number(ST.controls?.sequence || 0)})</p>
       ${e.wait_reason ? `<p class="focus-warn">${esc(t("afk.reason_" + e.wait_reason))}</p>` : ""}
       <div class="row" style="flex-wrap:wrap;gap:10px">
-        <button class="btn sm pri" data-act="ptest" data-target="fortnite" ${e.running || e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_button")}</button>
-        <button class="btn sm" data-act="ptest" data-target="notepad" ${e.running || e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_notepad")}</button>
+        <button class="btn sm" data-act="focusgame" ${!ST.diagnostics?.game_found ? "disabled" : ""}>${t("afk.focus_button")}</button>
+        <button class="btn sm pri" data-act="ptest" data-target="fortnite" ${e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_button")}</button>
+        <button class="btn sm" data-act="ptest" data-target="notepad" ${e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_notepad")}</button>
         <span class="mute">${t("afk.probe_help")}</span>
       </div>
       ${e.probe_status !== "idle" ? `<p class="mute">${t("afk.probe_status")}: ${esc(e.probe_target === "notepad" ? t("afk.probe_notepad_name") : "Fortnite")} — ${esc(t("afk.probe_" + e.probe_status))}
@@ -310,6 +355,14 @@ document.addEventListener("click", async ev => {
   }
   const el = ev.target.closest("[data-page],[data-act],[data-ui],[data-theme],[data-tog],[data-cadd],[data-cdel],[data-ptog],[data-pdel],[data-flt],[data-tdel]");
   if (!el) return; const d = el.dataset;
+  if (d.act && CONTROL_ACTIONS.has(d.act)) {
+    // A pointerdown already sent the command. Keyboard-triggered clicks still work.
+    if (lastPointerControl?.element === el && Date.now() - lastPointerControl.at < 2000) {
+      lastPointerControl = null;
+      return;
+    }
+    return runControlAction(d.act, d.target || "fortnite");
+  }
   if (d.page) { page = d.page; if (page === "templates") tplList = await api.templates(); return render(true); }
   if (d.ui) return patch({ui_language: d.ui});
   if (d.theme) return patch({theme: d.theme});
@@ -322,11 +375,6 @@ document.addEventListener("click", async ev => {
   if (d.tdel) { await api.delete_template(d.tdel); tplList = await api.templates(); return tick(); }
   const a = d.act, v = id => ($("#" + id) || {}).value || "";
   if (a === "theme") return patch({theme: ST.cfg.theme === "dark" ? "light" : "dark"});
-  if (a === "start") { await api.start(); return tick(); }
-  if (a === "ptest") { const r = await api.input_probe_delayed(d.target || "fortnite");
-    toast(r.ok ? t("afk.probe_started") : t("afk.probe_stop_first")); return tick(); }
-  if (a === "main") { const e = ST.engine; await (e.running ? api.pause() : api.start()); return tick(); }
-  if (a === "stop") { await api.stop(); return tick(); }
   if (a === "reset") { await api.reset_stats(); return tick(); }
   if (a === "mini") return api.open_mini();
   if (a === "dismiss") return patch({guide_dismissed: true});

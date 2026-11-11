@@ -1,6 +1,6 @@
 ; Easy Rewards per-user installer; generated on Windows with Inno Setup.
 #define AppName "Easy Rewards"
-#define AppVersion "1.3.5"
+#define AppVersion "1.3.7"
 #define AppExe "EasyRewards.exe"
 
 [Setup]

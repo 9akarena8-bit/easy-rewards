@@ -360,11 +360,16 @@ class HotkeyPoller(threading.Thread):
             for vk, cb in self.bindings.items():
                 down = bool(user32.GetAsyncKeyState(vk) & 0x8000)
                 if down and not prev[vk]:
-                    try:
-                        cb()
-                    except Exception:
-                        # A hotkey thread must not kill the GUI or leave keys held.
-                        import traceback
-                        traceback.print_exc()
+                    # Never execute callbacks on the polling thread. A slow
+                    # screenshot/probe/start would otherwise block F8 and F10.
+                    def invoke(callback=cb):
+                        try:
+                            callback()
+                        except Exception:
+                            # Keep the global hotkey poller alive on failures.
+                            import traceback
+                            traceback.print_exc()
+                    threading.Thread(target=invoke, name=f"hotkey-{vk}",
+                                     daemon=True).start()
                 prev[vk] = down
             time.sleep(0.03)

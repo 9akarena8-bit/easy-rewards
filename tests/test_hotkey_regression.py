@@ -18,6 +18,6 @@ def test_windows_hotkeys_have_vk_mappings():
 
 def test_release_and_installer_versions_match():
     version = (ROOT / "VERSION").read_text().strip()
-    assert version == "1.3.5"
+    assert version == "1.3.7"
     assert f'#define AppVersion "{version}"' in (ROOT / "installer.iss").read_text(encoding="utf-8")
     assert f'git tag v{version}' in (ROOT / "TAG_RELEASE.bat").read_text(encoding="utf-8")
