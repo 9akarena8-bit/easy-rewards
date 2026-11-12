@@ -134,8 +134,13 @@ class LocalInterestDrafts:
 
     def create(self, plan: str, method: str, game: str = "",
                skin_selection: dict | None = None) -> dict:
-        if plan not in PLAN_IDS or method not in METHOD_BY_ID:
+        # The desktop bridge receives untrusted JSON. Lists/dicts must never
+        # trigger TypeError via a set/dict membership test.
+        if (not isinstance(plan, str) or not isinstance(method, str)
+                or plan not in PLAN_IDS or method not in METHOD_BY_ID):
             return {"ok": False, "error": "invalid_plan_or_method"}
+        if not isinstance(game, str):
+            return {"ok": False, "error": "invalid_game"}
         if method == "steam_items":
             if game not in GAME_BY_ID:
                 return {"ok": False, "error": "invalid_game"}
