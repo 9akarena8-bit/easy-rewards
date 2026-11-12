@@ -17,6 +17,13 @@ if not exist ".buildenv\Scripts\python.exe" (
 ".buildenv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements.txt -r requirements-ui.txt "pyinstaller>=6,<7"
 if errorlevel 1 goto error
 
+rem Offline owner licenses require separate dependencies (for example cryptography).
+rem Legacy branches without this optional requirements file remain buildable.
+if exist "merchant_service\requirements-offline.txt" (
+    ".buildenv\Scripts\python.exe" -m pip install --disable-pip-version-check -r "merchant_service\requirements-offline.txt"
+    if errorlevel 1 goto error
+)
+
 echo.
 echo [1/2] Building Windows executable...
 ".buildenv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onedir --windowed --name EasyRewards --icon "assets\icon.ico" --add-data "ui:ui" --add-data "assets:assets" --add-data "VERSION:." --collect-submodules webview app.py
@@ -41,7 +48,7 @@ echo [2/2] Building setup.exe...
 "%ISCC%" "installer.iss"
 if errorlevel 1 goto error
 echo.
-echo READY: release\EasyRewards_Setup_1.2.4.exe
+echo READY: release\EasyRewards_Setup_1.4.2.exe
 pause
 exit /b 0
 :error
