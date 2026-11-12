@@ -84,7 +84,7 @@ def test_cleanup_only_removes_downloads_up_to_current_version(monkeypatch, tmp_p
 
 def test_installer_version_and_publish_scripts_consistent():
     version = (ROOT / "VERSION").read_text().strip()
-    assert version == "1.4.1"
+    assert version == "1.4.2"
     assert f'#define AppVersion "{version}"' in (ROOT / "installer.iss").read_text(encoding="utf-8")
     assert f"v{version}" in (ROOT / "TAG_RELEASE.bat").read_text(encoding="utf-8")
     assert "Flags: nowait" in (ROOT / "installer.iss").read_text(encoding="utf-8")
@@ -113,6 +113,10 @@ def test_github_release_api_uses_json_accept_header(monkeypatch):
 
 def test_beta_news_uses_real_installed_version(tmp_path):
     b = Backend(tmp_path, IO())
+    b.set_build_version("1.4.2")
+    assert b.state()["version"] == "1.4.2"
+    assert b.state()["release_news"][0]["version"] == "1.4.2-beta"
+    assert "Start" in b.state()["release_news"][0]["notes"]
     b.set_build_version("1.4.1")
     assert b.state()["version"] == "1.4.1"
     assert b.state()["release_news"][0]["version"] == "1.4.1-beta"

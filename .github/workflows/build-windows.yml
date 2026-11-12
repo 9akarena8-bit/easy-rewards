@@ -108,6 +108,6 @@ jobs:
             release/*.exe
             release/*.sha256
           generate_release_notes: true
-          # v1.4.0 is the first integrated tester build, not a verified stable product.
-          prerelease: ${{ steps.version.outputs.tag == 'v1.4.0' }}
+          # All 1.4.x builds remain prereleases pending Fortnite acceptance.
+          prerelease: ${{ startsWith(steps.version.outputs.tag, 'v1.4.') }}
           fail_on_unmatched_files: true

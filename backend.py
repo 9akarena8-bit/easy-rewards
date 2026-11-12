@@ -175,6 +175,17 @@ class Backend:
                           "пока HUD не распознан, Anti-AFK не действует. "
                           "Beta требует проверки в Fortnite; оплаты выключены.")
             }] + self._bundled_news
+        if self.version == "1.4.2":
+            self._bundled_news = [{
+                "version": "1.4.2-beta",
+                "title": "Fortnite Pirate Token v1.4.2 Beta — все исправления вместе",
+                "notes": ("Объединены обновления всех рабочих веток: исправлен Start → Stop → Start "
+                          "при долгой инициализации; поиск окна Fortnite не блокирует "
+                          "Python API и обновление интерфейса. Сохранены Alt+Tab, F12, "
+                          "подкат, распознавание лобби и подтверждение HUD перед Anti-AFK. "
+                          "Сохранены новости, дизайн, Telegram и демо-оплата. "
+                          "Требуется ручная проверка в Fortnite; реальные платежи отключены.")
+            }]
         self._release_news = list(self._bundled_news)
 
     # ------------------------------------------------------------ plumbing

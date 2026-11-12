@@ -1,6 +1,6 @@
 ; Easy Rewards per-user installer; generated on Windows with Inno Setup.
 #define AppName "Fortnite Pirate Token"
-#define AppVersion "1.4.1"
+#define AppVersion "1.4.2"
 #define AppExe "EasyRewards.exe"
 
 [Setup]
