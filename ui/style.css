@@ -150,6 +150,7 @@ body.mini #app{height:100vh;min-height:0;width:100%;margin:0;border:0;border-rad
 .focus-line{display:flex;gap:12px;justify-content:space-between;border-top:1px solid var(--line);padding:9px 0;font-size:12px}
 .focus-line span{color:var(--mute)}.focus-line b{max-width:63%;font-weight:600;overflow-wrap:anywhere;text-align:right}
 .focus-line .good{color:var(--ok)}.focus-warn{color:var(--bad);font-size:12px;margin:12px 0 0;line-height:1.6}
+.focus-warn:empty{display:none}
 
 /* v1.2.4 branding, notification and custom luck controls */
 .brand img, .window-logo, .boot-logo { object-fit: cover; border-radius:50%; }
