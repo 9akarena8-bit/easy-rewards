@@ -182,3 +182,17 @@ def test_start_after_stop_recreates_worker_without_stale_focus_pause(tmp_path):
         assert engine._ever_foreground is True
     finally:
         engine.stop()
+
+
+def test_alt_tab_detected_while_idle_even_with_long_scan_interval(tmp_path):
+    io = FakeGameIO()
+    engine = Engine(short_config(scan_interval=4.0), io, tmp_path)
+    try:
+        engine.start()
+        assert wait_for(lambda: engine._ever_foreground and engine.state == "afk_only")
+        io.active = False
+        assert wait_for(lambda: engine.paused, seconds=.8)
+        assert engine.pause_reason == "focus_lost"
+        assert io.focus_attempts == 0
+    finally:
+        engine.stop()
