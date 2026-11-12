@@ -105,6 +105,7 @@ def main() -> int:
             "F10": backend.pause,
             backend.cfg.afk_start_hotkey: backend.start,
             backend.cfg.afk_stop_hotkey: backend.stop,
+            "F12": backend.stop,  # unconditional emergency Stop
         }
 
     winio.HotkeyPoller(hotkey_bindings).start()
