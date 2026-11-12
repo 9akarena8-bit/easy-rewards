@@ -60,6 +60,46 @@ def test_missing_file_is_reported_without_exception(tmp_path):
     assert all(x["reason"] == "file_unavailable" for x in result["checks"])
 
 
+
+def test_expected_sha_is_not_enough_when_source_tree_is_dirty(tmp_path, monkeypatch):
+    fill_fake_candidate(tmp_path)
+    expected = "a" * 40
+    monkeypatch.setattr(module, "source_sha", lambda root: expected)
+    monkeypatch.setattr(module, "git_worktree_clean", lambda root: False)
+
+    result = module.inspect(tmp_path, expected)
+    assert not result["passed"]
+    assert result["checks"][-2]["id"] == "expected_source_sha"
+    assert result["checks"][-2]["ok"]
+    assert result["checks"][-1] == {
+        "id": "clean_worktree",
+        "file": ".git",
+        "ok": False,
+        "reason": "dirty_worktree",
+    }
+
+
+def test_attested_clean_tree_passes_when_contracts_exist(tmp_path, monkeypatch):
+    fill_fake_candidate(tmp_path)
+    expected = "a" * 40
+    monkeypatch.setattr(module, "source_sha", lambda root: expected)
+    monkeypatch.setattr(module, "git_worktree_clean", lambda root: True)
+    assert module.inspect(tmp_path, expected)["passed"]
+
+
+def test_git_unavailable_never_passes_sha_attestation(tmp_path, monkeypatch):
+    fill_fake_candidate(tmp_path)
+    expected = "b" * 40
+    monkeypatch.setattr(module, "source_sha", lambda root: expected)
+    monkeypatch.setattr(module, "git_worktree_clean", lambda root: None)
+
+    checks = module.inspect(tmp_path, expected)["checks"]
+    assert checks[-1]["id"] == "clean_worktree"
+    assert checks[-1]["reason"] == "git_status_unavailable"
+    assert not checks[-1]["ok"]
+
+
+
 def test_cli_exit_codes(tmp_path, capsys):
     assert module.main([str(tmp_path)]) == 1
     fill_fake_candidate(tmp_path)
