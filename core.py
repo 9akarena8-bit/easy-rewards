@@ -377,7 +377,12 @@ class Engine:
         if thread is threading.current_thread():
             return
         thread.join(timeout=0.35)
-        # _loop's finally clause marks the engine stopped and logs exactly once.
+        # The worker may finish between the is_alive check above and the
+        # "stopping" assignment. If join has returned a dead worker, normalize
+        # the public state rather than leaving "stopping" stuck indefinitely.
+        if not thread.is_alive():
+            self.state = "stopped"
+        # _loop's finally clause logs exactly once; do not duplicate it here.
 
     def _pause_for_focus_loss(self) -> None:
         """Latch a focus-loss pause without stopping the worker.
