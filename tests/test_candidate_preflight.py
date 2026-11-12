@@ -50,8 +50,9 @@ def test_requires_exact_sha_when_supplied(tmp_path):
     fill_fake_candidate(tmp_path)
     result = module.inspect(tmp_path, "f" * 40)
     assert not result["passed"]
-    assert result["checks"][-1]["id"] == "expected_source_sha"
-    assert not result["checks"][-1]["ok"]
+    checks_by_id = {check["id"]: check for check in result["checks"]}
+    assert not checks_by_id["expected_source_sha"]["ok"]
+    assert not checks_by_id["clean_worktree"]["ok"]
 
 
 def test_missing_file_is_reported_without_exception(tmp_path):
