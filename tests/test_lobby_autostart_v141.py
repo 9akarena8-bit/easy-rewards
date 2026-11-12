@@ -2,8 +2,6 @@
 
 No Fortnite connection, injection, payments or anti-cheat bypass involved.
 """
-import time
-
 import cv2
 import numpy as np
 
@@ -114,8 +112,6 @@ def test_lobby_step_priority_and_hud_confirmation(tmp_path):
     eng._tick()
     assert eng._in_match and eng.lobby_state == "in_match"
     assert eng.games == 1
-    eng._next_afk = time.monotonic() - 1
-    eng._tick()
     assert io.movements, "AFK is allowed only after the HUD is verified"
     assert eng.games == 1
 

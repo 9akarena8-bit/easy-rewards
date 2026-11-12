@@ -48,6 +48,15 @@ async function refreshFromBackend() {
   document.documentElement.dataset.theme = ST.cfg.theme;
   render();
 }
+function gameStatus() {
+  const d = ST.diagnostics;
+  if (d?.game_active) return t("diag.active");
+  if (d?.game_lookup_error) return t("afk.diag_lookup_error") + " (" + d.game_lookup_error + ")";
+  if (d?.game_found) return t("afk.diag_background");
+  if (d?.game_lookup_pending || d?.game_lookup_known === false) return t("afk.diag_searching");
+  return t("afk.diag_missing");
+}
+
 function refreshLiveMetrics() {
   if (!ST || !ST.engine) return;
   const e = ST.engine;
@@ -73,8 +82,10 @@ function refreshLiveMetrics() {
                   "Анти-AFK на паузі. Повернися у Fortnite та натисни "))
       + resumeKey() + (resumeKey() === "F10" ? "." : controlUi(" (F10 тоже работает).", " (F10 also works).", " (F10 також працює)."));
   });
-  updateText('[data-live="game-status"]', ST.diagnostics?.game_active ? t("diag.active")
-    : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing")));
+  updateText('[data-live="game-status"]', gameStatus());
+  updateText('[data-live="wait-reason"]', e.wait_reason ? t("afk.reason_" + e.wait_reason) : "");
+  updateText('[data-live="input-error"]', e.input_error || "");
+  updateText('[data-live="start-error"]', ST.controls?.start_error || "");
   updateText('[data-live="foreground-title"]', ST.diagnostics?.foreground_title || t("diag.none"));
   updateText('[data-live="foreground-process"]', ST.diagnostics?.foreground_process || "—");
   updateText('[data-live="lobby-state"]', e.lobby_state || "idle");
@@ -83,7 +94,13 @@ function refreshLiveMetrics() {
   updateText('[data-live="last-control"]', (ST.controls?.last || "—")
     + " " + (ST.controls?.time || "") + " (" + Number(ST.controls?.sequence || 0) + ")");
   document.querySelectorAll('button[data-act="start"]').forEach(node => { node.disabled = Boolean(e.running); });
-  document.querySelectorAll('button[data-act="stop"],button[data-act="pause"]').forEach(node => {
+  document.querySelectorAll('button[data-act="stop"]').forEach(node => {
+    node.disabled = !e.running && !ST.controls?.start_pending;
+  });
+  document.querySelectorAll('button[data-act="focusgame"]').forEach(node => {
+    node.disabled = !ST.diagnostics?.game_found && !ST.diagnostics?.game_active;
+  });
+  document.querySelectorAll('button[data-act="pause"]').forEach(node => {
     node.disabled = !e.running;
   });
   document.querySelectorAll('button[data-act="pause"]').forEach(node => {
@@ -229,7 +246,7 @@ const PAGE = {
     <div class="card compact-controller"><h3>${t("home.status")}</h3>
       <div class="control-buttons">
         <button class="start-square" data-act="start" ${e.running ? "disabled" : ""}><span>▶</span><strong>${t("btn.start")}</strong></button>
-        <button class="btn control-stop" data-act="stop" ${!e.running ? "disabled" : ""}>■ &nbsp;${t("btn.stop")}</button>
+        <button class="btn control-stop" data-act="stop" ${!e.running && !ST.controls?.start_pending ? "disabled" : ""}>■ &nbsp;${t("btn.stop")}</button>
         <button class="btn control-pause" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} &nbsp;${e.paused ? t("btn.resume") : t("btn.pause")}</button>
       </div>
       <div class="control-footer"><button class="btn sm" data-act="reset">${t("btn.reset")}</button><small>${hotkeySummary()}</small></div></div>
@@ -269,19 +286,20 @@ const PAGE = {
       <span class="badge" data-live="afk-last">${t("afk.last")}: ${esc(e.last_input || "—")}</span>
     </div>
     <p class="afk-pause-banner" data-live="pause-hint" ${!e.paused ? "hidden" : ""}></p>
-    ${e.input_error ? `<div class="warnbox">${esc(e.input_error)}</div>` : ""}
+    <p class="focus-warn" data-live="input-error">${esc(e.input_error || "")}</p>
     <div class="card afk-diag" style="margin-bottom:16px">
       <h3>${t("diag.heading")}</h3>
-      <p class="mute">${t("afk.diag_status")}: <b data-live="game-status">${ST.diagnostics?.game_active ? t("diag.active") : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing"))}</b></p>
+      <p class="mute">${t("afk.diag_status")}: <b data-live="game-status">${esc(gameStatus())}</b></p>
       <p class="mute">${t("diag.foreground")}: <b data-live="foreground-title">${esc(ST.diagnostics?.foreground_title || t("diag.none"))}</b>
         (<span data-live="foreground-process">${esc(ST.diagnostics?.foreground_process || "—")}</span>)</p>
       <p class="mute">${t("afk.last_control")}: <b data-live="last-control">${esc(ST.controls?.last || "—")} ${esc(ST.controls?.time || "")} (${Number(ST.controls?.sequence || 0)})</b></p>
-      ${e.wait_reason ? `<p class="focus-warn">${esc(t("afk.reason_" + e.wait_reason))}</p>` : ""}
+      <p class="focus-warn" data-live="wait-reason">${e.wait_reason ? esc(t("afk.reason_" + e.wait_reason)) : ""}</p>
       <p class="mute">${t("afk.lobby_status")}: <b data-live="lobby-state">${esc(e.lobby_state || "idle")}</b> · ${t("afk.lobby_clicks")}: <b data-live="lobby-clicks">${Number(e.lobby_clicks || 0)}</b></p>
       <p class="mute">${t("afk.start_phase")}: <b data-live="start-phase">${esc(ST.controls?.start_phase || "idle")}</b></p>
+      <p class="focus-warn" data-live="start-error">${esc(ST.controls?.start_error || "")}</p>
       ${e.lobby_buttons_configured && !e.lobby_hud_configured ? `<p class="focus-warn">${t("afk.lobby_hud_warning")}</p>` : ""}
       <div class="row" style="flex-wrap:wrap;gap:10px">
-        <button class="btn sm" data-act="focusgame" ${!ST.diagnostics?.game_found ? "disabled" : ""}>${t("afk.focus_button")}</button>
+        <button class="btn sm" data-act="focusgame" ${!ST.diagnostics?.game_found && !ST.diagnostics?.game_active ? "disabled" : ""}>${t("afk.focus_button")}</button>
         <button class="btn sm pri" data-act="ptest" data-target="fortnite" ${e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_button")}</button>
         <button class="btn sm" data-act="ptest" data-target="notepad" ${e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_notepad")}</button>
         <button class="btn sm" data-act="afk_report">${controlUi("Отчёт для тестирования", "Beta diagnostic report", "Звіт для тестування")}</button>
