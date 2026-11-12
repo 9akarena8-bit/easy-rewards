@@ -6,6 +6,8 @@ through an `IO` object (see winio.py), which makes the engine testable.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import random
 import threading
 import time
@@ -73,16 +75,41 @@ class Config:
         cfg = cls()
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                return cfg
             names = {f.name for f in fields(cls)}
             for k, v in data.items():
                 if k in names:
                     setattr(cfg, k, v)
-        except (OSError, ValueError):
+            # Backward-compatible settings from the approved-v2 design beta.
+            legacy = {"hotkey_start": "afk_start_hotkey",
+                      "hotkey_stop": "afk_stop_hotkey",
+                      "hotkey_pause": "afk_pause_hotkey",
+                      "auto_launch_game": "afk_launch_game"}
+            for old, new in legacy.items():
+                if old in data and new not in data:
+                    setattr(cfg, new, data[old])
+        except (OSError, ValueError, TypeError, AttributeError):
             pass
         return cfg
 
     def save(self, path: Path) -> None:
-        Path(path).write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
+        """Replace configuration atomically so interruptions do not truncate it."""
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                    "w", encoding="utf-8", dir=target.parent,
+                    prefix=".cfg-", suffix=".tmp", delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump(asdict(self), stream, indent=2)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, target)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 # ------------------------------------------------------------- templates
