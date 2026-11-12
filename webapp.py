@@ -96,13 +96,38 @@ def main() -> int:
     hooks.save_dialog = save_dialog
     hooks.open_dialog = open_dialog
 
-    winio.HotkeyPoller({
-        "F6": backend.engine.input_probe,
-        "F7": backend.start,
-        "F8": backend.stop,
-        "F9": backend.hotkey_count,
-        "F10": backend.pause,
-    }).start()
+    def hotkey_bindings():
+        # F6 diagnostic and F9 counter remain reserved.
+        return {
+            "F6": backend.engine.input_probe,
+            "F9": backend.hotkey_count,
+            backend.cfg.hotkey_start: backend.start,
+            backend.cfg.hotkey_stop: backend.stop,
+            backend.cfg.hotkey_pause: backend.pause,
+        }
+
+    hotkeys = winio.HotkeyPoller(hotkey_bindings())
+    hooks.hotkeys_changed = lambda: hotkeys.set_bindings(hotkey_bindings())
+
+    def focus_after_start():
+        # Only called when a verified Fortnite window exists and isn't active.
+        # Minimize our own launcher before requesting foreground focus.
+        if main_win is not None:
+            main_win.minimize()
+
+        def focus():
+            time.sleep(0.18)
+            try:
+                focused = backend.io.game_in_foreground() or backend.io.focus_game()
+                backend.engine.focus_result = "focused" if focused else "denied"
+            except Exception as exc:
+                backend.engine.focus_result = "error: " + str(exc)
+        threading.Thread(target=focus, name="focus-existing-game",
+                         daemon=True).start()
+
+    hooks.focus_on_start = focus_after_start
+    hooks.launch_game = backend.io.launch_game
+    hotkeys.start()
 
     update_shutdown = threading.Event()
 

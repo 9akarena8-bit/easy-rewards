@@ -152,14 +152,17 @@ def test_false_positive_single_frame_does_not_freeze_movement(tmp_path):
     assert eng.replay_status == 'idle'
 
 
-def test_focus_attempt_is_throttled(tmp_path):
+def test_alt_tab_does_not_steal_focus_from_other_windows(tmp_path):
     io = ReplayIO(frame())
     io.active = False
     eng = Engine(Config(auto_focus=True), io, tmp_path, log=lambda *a, **kw: None)
     for _ in range(5):
         eng._tick()
-    assert io.focus_calls == 1
-    assert eng.focus_result == 'denied'
+    # The launcher may request focus at startup, but the running engine must
+    # never switch windows while the user is Alt+Tabbed away.
+    assert io.focus_calls == 0
+    assert eng._focus_suspended
+    assert eng.state == 'waiting_window'
 
 
 def test_replay_switch_persists_through_backend_config(tmp_path):

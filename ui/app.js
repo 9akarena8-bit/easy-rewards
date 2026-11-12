@@ -8,12 +8,37 @@ let tplRole = "start", tplName = "", S = {}, ST = null, page = "home", sig = "",
 const PAGES = [["home", "◉", "nav.home"], ["afk", "↝", "nav.afk"], ["tracker", "✦", "nav.tracker"], ["templates", "▣", "nav.templates"],
   ["settings", "⚙", "nav.settings"], ["updates", "⟳", "nav.updates"], ["subscriptions", "◇", "nav.subscriptions"], ["support", "⚑", "nav.support"], ["guide", "?", "nav.guide"]];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
-const t = (k, kw = {}) => (S[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "");
+const HOTKEY_LABELS = new Set(["hotkeys", "set.hotkeys_text", "diag.focus_hint", "guide.s4_d", "afk.safety"]);
+const t = (k, kw = {}) => {
+  let value = S[k] ?? k;
+  if (ST?.cfg && HOTKEY_LABELS.has(k)) {
+    const current = {"F7":ST.cfg.hotkey_start, "F8":ST.cfg.hotkey_stop, "F10":ST.cfg.hotkey_pause};
+    value = value.replace(/\bF(?:7|8|10)\b/g, key => current[key] || key);
+  }
+  return value.replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "");
+};
 const fmtT = seconds => { const s = Math.floor(Math.max(0, Number(seconds) || 0)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(n => String(n).padStart(2, "0")).join(":"); };
 const num = n => Number(n).toLocaleString();
 const tog = (k, on) => `<div class="tog ${on ? "on" : ""}" data-tog="${k}"></div>`;
 function toast(m) { clearTimeout(toastT); document.querySelectorAll(".toast").forEach(e => e.remove());
   const d = document.createElement("div"); d.className = "toast"; d.textContent = m; document.body.append(d); toastT = setTimeout(() => d.remove(), 2200); }
+const focusStatusLabel = code => {
+  const lang = ST?.cfg?.ui_language || "ru";
+  const messages = {
+    launch_requested: ["Запрос на запуск через Epic Games отправлен. Ожидаем окно Fortnite.",
+      "Launch requested via Epic Games. Waiting for the Fortnite window.",
+      "Запуск через Epic Games запитано. Очікуємо вікно Fortnite."],
+    launcher_unavailable: ["Не найден обработчик Epic Games Launcher.",
+      "Epic Games Launcher protocol is not available.",
+      "Протокол Epic Games Launcher недоступний."],
+    focused: ["Fortnite активен", "Fortnite is focused", "Fortnite активний"],
+    denied: ["Windows не разрешила переключить окно — переключись вручную.",
+      "Windows denied focus; switch to the game manually.",
+      "Windows не дозволила перемкнути вікно — перейдіть вручну."]
+  };
+  const indexes = {ru:0,en:1,uk:2};
+  return (messages[code] || [code || "—",code || "—",code || "—"])[indexes[lang] ?? 0];
+};
 const cname = c => c.name || t(c.key);
 const languageButton = l => `<button class="${ST.cfg.ui_language === l ? "on" : ""}" data-ui="${l}" title="${esc(t("lang." + l))}">${({ru:"🇷🇺",en:"🇬🇧",uk:"🇺🇦"})[l]} <span>${esc(t("lang.short_" + l))}</span></button>`;
 
@@ -52,6 +77,8 @@ function refreshLiveMetrics() {
     : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing")));
   updateText('[data-live="foreground-title"]', ST.diagnostics?.foreground_title || t("diag.none"));
   updateText('[data-live="foreground-process"]', ST.diagnostics?.foreground_process || "—");
+  updateText('[data-live="focus-result"]', focusStatusLabel(e.focus_result));
+  updateText('[data-live="auto-pause"]', t(e.paused ? "afk.auto_pause_manual" : e.focus_suspended ? "afk.auto_pause_wait" : "afk.auto_pause_ready"));
   updateText('[data-live="last-control"]', (ST.controls?.last || "—")
     + " " + (ST.controls?.time || "") + " (" + Number(ST.controls?.sequence || 0) + ")");
   document.querySelectorAll('button[data-act="start"]').forEach(node => { node.disabled = Boolean(e.running); });
@@ -64,11 +91,11 @@ function refreshLiveMetrics() {
     if (node.textContent !== text) node.textContent = text;
   });
   document.querySelectorAll('.gold-status').forEach(node => {
-    node.querySelector(".gold-led")?.classList.toggle("active", Boolean(e.running && !e.paused));
+    node.querySelector(".gold-led")?.classList.toggle("active", Boolean(e.running && !e.paused && !e.focus_suspended));
     if (node.lastChild?.nodeType === 3) node.lastChild.nodeValue = t("state." + e.state);
   });
   document.querySelectorAll('.home-topline .pill').forEach(node => {
-    node.querySelector(".dot")?.classList.toggle("on", Boolean(e.running && !e.paused));
+    node.querySelector(".dot")?.classList.toggle("on", Boolean(e.running && !e.paused && !e.focus_suspended));
     if (node.lastChild?.nodeType === 3) node.lastChild.nodeValue = t("state." + e.state);
   });
   const logNumber = ST.log.length ? ST.log[ST.log.length - 1].n : 0;
@@ -185,7 +212,7 @@ const PAGE = {
   home() {
     const e = ST.engine, g = ST.guide, h = e.history, mx = Math.max(1, ...h.map(x => x.games + x.cycles));
     const done = [g.c1, g.c2, g.c3], quick = !g.dismissed && !done.every(Boolean);
-    const status = `<span class="pill"><span class="dot ${e.running && !e.paused ? "on" : ""}"></span>${t("state." + e.state)}</span>`;
+    const status = `<span class="pill"><span class="dot ${e.running && !e.paused && !e.focus_suspended ? "on" : ""}"></span>${t("state." + e.state)}</span>`;
     return `<div class="home-topline"><div><div class="eyebrow">✧ ${t("home.overview")}</div><div class="intro-head">${t("home.title")}<span class="intro-line"></span></div></div>
       <div class="home-top-panels"><div class="session-head"><span>${t("home.status")}</span>${status}</div>
       <button class="btn sm" data-page="guide">${t("guide.open")}</button></div></div>
@@ -220,11 +247,32 @@ const PAGE = {
   },
   afk() {
     const c = ST.cfg, e = ST.engine;
+    const hotkeyLocale = (ru, en, uk) => ({ru, en, uk})[c.ui_language] || ru;
+    const hotkeyOptions = Array.from({length:12}, (_, i) => "F" + (i + 1))
+      .filter(key => !["F6", "F9"].includes(key));
+    const hotkeySelect = (setting, label) => `<label class="afk-key-field"><span>${label}</span>
+      <select class="in" data-cfg="${setting}" aria-label="${label}">
+        ${hotkeyOptions.map(key => `<option value="${key}" ${c[setting] === key ? "selected" : ""}>${key}</option>`).join("")}
+      </select></label>`;
     const f = (label, inner) => `<div class="field"><span>${label}</span>${inner}</div>`;
     const sl = (key, min, max, step) => `<div class="row"><input type="range" data-cfg="${key}" min="${min}" max="${max}" step="${step}" value="${c[key]}"><b data-out="${key}">${c[key]}</b></div>`;
-    const status = `<span class="pill"><span class="dot ${e.running && !e.paused ? "on" : ""}"></span>${t("state." + e.state)}</span>`;
+    const status = `<span class="pill"><span class="dot ${e.running && !e.paused && !e.focus_suspended ? "on" : ""}"></span>${t("state." + e.state)}</span>`;
     return `<div class="home-topline"><div><div class="eyebrow">✧ ${t("afk.subtitle_small")}</div><div class="intro-head">${t("afk.title")}<span class="intro-line"></span></div></div>${status}</div>
     <p class="mute">${t("afk.v13desc")}</p>
+    <div class="afk-auto-pause" data-live="auto-pause">${t(e.paused ? "afk.auto_pause_manual" : e.focus_suspended ? "afk.auto_pause_wait" : "afk.auto_pause_ready")}</div>
+    <div class="card afk-hotkey-card">
+      <h3>${hotkeyLocale("Горячие клавиши", "Keyboard shortcuts", "Гарячі клавіші")}</h3>
+      <div class="afk-hotkey-grid">
+        ${hotkeySelect("hotkey_start", hotkeyLocale("Запуск", "Start", "Запуск"))}
+        ${hotkeySelect("hotkey_stop", hotkeyLocale("Остановка", "Stop", "Зупинка"))}
+        ${hotkeySelect("hotkey_pause", hotkeyLocale("Пауза", "Pause", "Пауза"))}
+      </div>
+      <p class="mute">${hotkeyLocale(
+        "F6 — диагностика, F9 — счётчик. Одинаковые клавиши назначать нельзя. При запуске из лаунчера окно Fortnite активируется, если Windows разрешит.",
+        "F6 — diagnostics, F9 — counter. Shortcuts must be unique. Starting from the launcher requests Fortnite focus when Windows permits.",
+        "F6 — діагностика, F9 — лічильник. Клавіші мають бути різні. Запуск із лаунчера активує Fortnite, якщо Windows дозволить."
+      )}</p>
+    </div>
     <div class="row" style="margin-bottom:14px;flex-wrap:wrap">
       <button class="btn pri" data-act="start" ${e.running ? "disabled" : ""}>▶ ${t("btn.start")}</button>
       <button class="btn" data-act="stop" ${!e.running ? "disabled" : ""}>■ ${t("btn.stop")}</button>
@@ -236,6 +284,7 @@ const PAGE = {
     <div class="card afk-diag" style="margin-bottom:16px">
       <h3>${t("diag.heading")}</h3>
       <p class="mute">${t("afk.diag_status")}: <b data-live="game-status">${ST.diagnostics?.game_active ? t("diag.active") : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing"))}</b></p>
+      <p class="mute">${hotkeyLocale("Запуск / фокус игры", "Game launch / focus", "Запуск / фокус гри")}: <b data-live="focus-result">${esc(focusStatusLabel(e.focus_result))}</b></p>
       <p class="mute">${t("diag.foreground")}: <b data-live="foreground-title">${esc(ST.diagnostics?.foreground_title || t("diag.none"))}</b>
         (<span data-live="foreground-process">${esc(ST.diagnostics?.foreground_process || "—")}</span>)</p>
       <p class="mute">${t("afk.last_control")}: <b data-live="last-control">${esc(ST.controls?.last || "—")} ${esc(ST.controls?.time || "")} (${Number(ST.controls?.sequence || 0)})</b></p>
@@ -252,6 +301,7 @@ const PAGE = {
     </div>
     <div class="grid g2" style="align-items:start">
     <div class="card"><h3>${t("afk.mode")}</h3>
+      ${f(hotkeyLocale("Открывать Fortnite через Epic Games, если игра закрыта", "Launch Fortnite via Epic Games when not running", "Запускати Fortnite через Epic Games, якщо гра закрита"), tog("auto_launch_game", c.auto_launch_game))}
       ${f(t("afk.enabled"), tog("afk_enabled", c.afk_enabled))}
       ${f(t("afk.sequence"), tog("afk_sequence_enabled", c.afk_sequence_enabled))}
       ${f(t("afk.minpause"), sl("afk_pause_min", .2, 5, .1))}
@@ -610,7 +660,14 @@ document.addEventListener("change", async ev => { const e = ev.target;
   if (e.id === "pay-method") { payMethod = e.value; paymentDraft = null; return render(true); }
   if (e.id === "pay-game") { payGame = e.value; paymentDraft = null; return render(true); }
   if (e.id === "role") tplRole = e.value;
-  if (e.dataset.cfg) { await patch({[e.dataset.cfg]: e.value}); toast(t("toast.saved")); }
+  if (e.dataset.cfg) {
+    const result = await api.set_config({[e.dataset.cfg]: e.value});
+    await tick();
+    if (result?.ok === false) {
+      toast(({ru:"Нельзя назначить эту клавишу: выбери свободную F-клавишу.",en:"Shortcut unavailable: choose a free F-key.",uk:"Ця клавіша недоступна: вибери вільну F-клавішу."})[ST.cfg.ui_language] || "Shortcut unavailable");
+      render(true);
+    } else toast(t("toast.saved"));
+  }
   else if (e.id === "wk") { await api.tracker_set({week_start: e.value}); tick(); }
   else if (e.id === "boost" || e.id === "odds") { /* Save explicitly with the button. */ } });
 // The pywebviewready event is dispatched on WINDOW, not document.

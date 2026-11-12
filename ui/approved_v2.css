@@ -1,0 +1,115 @@
+/* Approved v2 menu reference: blue midnight sea, sunset, bright gold accents.
+   Keeps the original Fortnite Pirate Token emblem and the demo payment UI.
+   This skin is deliberately decorative; it does not claim subscriptions are active. */
+:root:not([data-theme="light"]){
+  --bg1:#06142d; --bg2:#0a1c3e; --panel:#091932;
+  --card:#102342; --field:#132848; --ink:#fff9e9;
+  --mute:#b8c8e4; --line:rgba(255,191,73,.32);
+  --acc:#ffcc40; --acc2:#e58c16; --accent-ink:#11203b;
+  --shadow:0 17px 43px rgba(0,0,0,.42);
+}
+body:not(.mini){background:#040d21}
+body:not(.mini) .window-bar{
+  background:linear-gradient(95deg,#08172f 8%,#143b67 55%,#09152d 100%);
+  border-bottom:1px solid #d7a340;box-shadow:0 3px 21px rgba(3,9,30,.3);
+}
+body:not(.mini) #app{background:linear-gradient(160deg,#091e41 0%,#09152e 48%,#050d1e 100%);border-color:#b18b39}
+body:not(.mini) .rail{
+  background:linear-gradient(165deg,#07152c 0%,#0b2449 54%,#08132a 100%);
+  border-right:1px solid rgba(255,198,57,.5);
+  box-shadow:inset -4px 0 21px rgba(10,38,79,.4);
+}
+body:not(.mini) .top{
+  background:linear-gradient(95deg,#0c2143,#132d56 55%,#09142c);
+  border-bottom-color:rgba(255,188,51,.42);
+}
+body:not(.mini) .page{
+  background:
+   radial-gradient(ellipse at 82% -12%,rgba(251,145,82,.10),transparent 32%),
+   radial-gradient(ellipse at 16% 50%,rgba(17,82,151,.20),transparent 48%);
+}
+body:not(.mini) .card{
+  background:linear-gradient(145deg,rgba(25,51,92,.88),rgba(8,20,44,.96) 79%);
+  border:1px solid rgba(255,190,60,.38);
+  box-shadow:0 9px 25px rgba(2,8,25,.35),inset 0 1px 0 rgba(182,212,255,.11);
+}
+.gold-brand img,.gold-rail-profile img{box-shadow:0 0 16px rgba(255,180,46,.45)}
+.brand.gold-brand em,.gold-overline,.gold-nav-label{color:#ffd34f}
+.gold-nav .nav{color:#e5ecff}
+.gold-nav .nav i{color:#ffd770}
+.gold-nav .nav.on{
+  background:linear-gradient(120deg,#ffc52e 0%,#ffe36c 48%,#e99e17 100%);
+  color:#141c2c;border-color:#ffe88e;
+  box-shadow:0 0 24px rgba(255,171,33,.37),inset 0 1px #fff4bd;
+}
+.gold-nav .nav.on i{color:#191c25}
+.gold-hero{
+  min-height:315px;
+  background:
+    linear-gradient(90deg,rgba(4,14,39,.93) 0%,rgba(4,20,50,.73) 44%,rgba(8,22,54,.06) 85%),
+    url("pirate_seascape.svg") center/cover no-repeat;
+  border:1px solid rgba(255,203,69,.69);
+  box-shadow:0 10px 36px rgba(4,12,33,.52),inset 0 1px rgba(255,237,166,.2);
+}
+.gold-hero::before{
+  background:linear-gradient(180deg,rgba(2,13,35,.02),rgba(3,8,28,.18));
+  opacity:1;mask-image:none;
+}
+.gold-hero-copy{flex-basis:58%}
+.gold-hero-kicker{color:#ffcf38;font-size:11px;letter-spacing:.12em}
+.gold-hero h2{font-size:clamp(24px,2.9vw,37px);color:#fff;text-shadow:0 3px 8px rgba(0,0,0,.6)}
+.gold-hero h2 span{color:#ffe05b;text-shadow:0 0 19px rgba(255,172,40,.28)}
+.gold-slogan{color:#ecf0fd;font-size:14px;text-shadow:0 2px 8px rgba(0,0,0,.65)}
+.gold-hero-visual{height:315px;flex-basis:42%}
+.gold-hero-halo{background:radial-gradient(ellipse,rgba(255,182,40,.29),transparent 65%)}
+.gold-chest{filter:drop-shadow(0 15px 22px rgba(2,7,24,.8)) drop-shadow(0 0 12px rgba(255,164,28,.29))}
+.gold-token{border-color:#ffe278;box-shadow:0 0 16px #e9a62b,0 0 4px #ffe8ae}
+.gold-play,.btn.pri{
+  color:#17233a!important;
+  background:linear-gradient(180deg,#fff67e 0%,#ffcd21 56%,#ee9410 100%)!important;
+  border:1px solid #ffec93!important;
+  box-shadow:inset 0 1px #fff9b8,0 4px 18px rgba(238,151,21,.34);
+}
+.gold-play{min-width:175px}
+.gold-header-btn,.gold-avatar,.gold-rail-profile{
+  background:linear-gradient(140deg,#1c3359,#08172f);
+  border-color:rgba(253,195,75,.48)
+}
+.gold-status,.gold-version,.gold-top-version{border-color:rgba(255,203,77,.4);color:#ffdfa2}
+.gold-news-icon{background:linear-gradient(135deg,#135ca0,#0c2d6e);color:#ffe7a5}
+.gold-news-item{background:linear-gradient(110deg,rgba(35,65,114,.6),rgba(5,20,45,.55));border-color:rgba(225,177,77,.24)}
+.gold-rail-foot{color:#aebbd9}
+.afk-hotkey-card{margin-bottom:15px;padding:17px 19px!important}
+.afk-hotkey-card h3{margin:0 0 12px;color:#ffda72}
+.afk-hotkey-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.afk-key-field{display:flex;flex-direction:column;gap:6px;min-width:0;color:#e5ecfb;font-size:12px;font-weight:600}
+.afk-key-field select{width:100%;min-height:37px;border:1px solid rgba(255,197,76,.52);border-radius:10px;padding:7px;background:#102e55;color:#fff}
+.afk-hotkey-card .mute{font-size:11px;margin:11px 0 0;line-height:1.6}
+@media(max-width:1000px){
+  .gold-hero{min-height:270px}
+  .gold-hero-copy{flex-basis:61%}
+  .gold-hero-visual{flex-basis:39%}
+  .gold-chest{width:115%}
+}
+@media(max-width:730px){
+  .afk-hotkey-grid{grid-template-columns:1fr}
+  .gold-hero{background-position:64% center}
+}
+
+/* Alt+Tab auto-suspend indicator: distinct from manually pressed Pause. */
+.afk-auto-pause{
+  border:1px solid rgba(250,194,65,.42);
+  background:linear-gradient(90deg,rgba(255,198,67,.11),rgba(16,33,65,.3));
+  color:#f8dfa7;
+  border-radius:11px;
+  padding:10px 14px;
+  font-size:12px;
+  font-weight:650;
+  line-height:1.45;
+  margin:0 0 15px;
+}
+:root[data-theme=light] .afk-auto-pause{
+  color:#6c4814;
+  border-color:rgba(144,104,30,.4);
+  background:#fff5dd;
+}

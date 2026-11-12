@@ -39,11 +39,13 @@ NUM_LIMITS = {          # key: (type, lo, hi)
     "afk_pause_max": (float, 0.2, 10.0),
     "afk_camera_pixels_360": (float, 100.0, 12000.0),
 }
-BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
+BOOLS = ("require_foreground", "auto_focus", "auto_launch_game", "afk_enabled", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
          "afk_slide_enabled", "afk_camera_enabled", "afk_slot_enabled", "afk_pickaxe_enabled",
          "afk_grenade_enabled", "afk_weapon_enabled", "afk_replay_auto_detect")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
         "theme": ("light", "dark"), "ui_language": LANGS}
+HOTKEY_FIELDS = ("hotkey_start", "hotkey_stop", "hotkey_pause")
+HOTKEY_ALLOWED = frozenset(f"F{i}" for i in range(1, 13)) - {"F6", "F9"}
 SHOT_MAX_W = 1600
 
 
@@ -59,6 +61,9 @@ class Hooks:
     close_mini = None
     save_dialog = None      # (suggested_name) -> path | None
     open_dialog = None      # () -> path | None
+    hotkeys_changed = None  # () -> None; safely refresh the global hotkey map
+    focus_on_start = None   # () -> None; minimize launcher then focus an existing game
+    launch_game = None      # () -> bool; open documented Epic Launcher URI
 
 
 class Backend:
@@ -217,7 +222,7 @@ class Backend:
                          "time": self._control_time,
                          "sequence": self._control_sequence},
             "cfg": {k: getattr(self.cfg, k) for k in Config.__dataclass_fields__},
-            "engine": {"state": ("stopping" if e.stopping else "paused" if e.paused and e.running else e.state), "running": e.running, "paused": e.paused, "score": round(e.score, 3),
+            "engine": {"state": ("stopping" if e.stopping else "paused" if e.paused and e.running else e.state), "running": e.running, "paused": e.paused, "focus_suspended": e.focus_suspended, "score": round(e.score, 3),
                        "games": e.games, "cycles": e.cycles, "rewards": e.rewards, "runtime": int(e.runtime),
                        "history": self._history(),
                        "input_count": e.input_count, "last_input": e.last_input,
@@ -256,6 +261,25 @@ class Backend:
     def start(self) -> None:
         self._control_received("start")
         self.engine.start()
+        if not self.engine.running:
+            return
+        # Existing verified window: minimize our UI and request ordinary focus.
+        # Missing window: optionally ask Epic Launcher to open the game. Never
+        # attempt to start FortniteClient executable or bypass game protection.
+        try:
+            found = bool(hasattr(self.io, "game_window_found") and
+                         self.io.game_window_found())
+            if (found and self.cfg.auto_focus and
+                    not self.io.game_in_foreground() and
+                    callable(self.hooks.focus_on_start)):
+                self.hooks.focus_on_start()
+            elif (not found and self.cfg.auto_launch_game and
+                  callable(self.hooks.launch_game)):
+                launched = bool(self.hooks.launch_game())
+                self.engine.focus_result = ("launch_requested" if launched
+                                            else "launcher_unavailable")
+        except Exception as exc:
+            self.engine.focus_result = "error: " + repr(exc)
 
     def input_probe_delayed(self, target: str = "fortnite") -> dict:
         """Schedule a test while the user switches to the target window."""
@@ -304,6 +328,7 @@ class Backend:
     def set_config(self, patch: dict) -> dict:
         """Apply validated settings. Returns {"ok": bool, "rejected": [keys]}."""
         rejected = []
+        old_hotkeys = tuple(getattr(self.cfg, k) for k in HOTKEY_FIELDS)
         for k, v in (patch or {}).items():
             try:
                 if k in NUM_LIMITS:
@@ -311,6 +336,12 @@ class Backend:
                     setattr(self.cfg, k, max(lo, min(hi, typ(v))))
                 elif k in BOOLS:
                     setattr(self.cfg, k, bool(v))
+                elif k in HOTKEY_FIELDS:
+                    key = str(v).strip().upper()
+                    others = {getattr(self.cfg, other) for other in HOTKEY_FIELDS if other != k}
+                    if key not in HOTKEY_ALLOWED or key in others:
+                        raise ValueError("invalid or duplicate shortcut")
+                    setattr(self.cfg, k, key)
                 elif k in STRS:
                     if v not in STRS[k]:
                         raise ValueError(k)
@@ -336,6 +367,9 @@ class Backend:
             else:
                 self.cfg.afk_pause_min = self.cfg.afk_pause_max
         self._save_cfg()
+        if (old_hotkeys != tuple(getattr(self.cfg, k) for k in HOTKEY_FIELDS) and
+                callable(self.hooks.hotkeys_changed)):
+            self.hooks.hotkeys_changed()
         return {"ok": not rejected, "rejected": rejected}
 
     # ------------------------------------------------------------ templates

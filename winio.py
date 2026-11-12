@@ -60,7 +60,7 @@ MOUSEEVENTF_MOVE = 0x0001
 SCANCODES = {"w": 0x11, "a": 0x1E, "s": 0x1F, "d": 0x20, " ": 0x39,
              "space": 0x39, "shift": 0x2A, "ctrl": 0x1D, "y": 0x15,
              "1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06, "6": 0x07}
-VK = {"F6": 0x75, "F7": 0x76, "F8": 0x77, "F9": 0x78, "F10": 0x79}
+VK = {f"F{i}": 0x6F + i for i in range(1, 13)}
 
 
 class KEYBDINPUT(ctypes.Structure):
@@ -98,8 +98,28 @@ def _mouse(flags: int) -> None:
     _send(INPUT(INPUT_MOUSE, _INPUTUNION(mi=MOUSEINPUT(0, 0, 0, flags, 0, 0))))
 
 
+EPIC_FORTNITE_URI = (
+    "com.epicgames.launcher://apps/"
+    "fn%3A4fe75bbc5a674f4f9b356b5c90567da5%3AFortnite"
+    "?action=launch&silent=true"
+)
+
+
 class WinIO:
     window_title = "Fortnite"
+
+    def launch_game(self) -> bool:
+        """Request Fortnite through the installed official Epic Games Launcher."""
+        import os
+        import winreg
+        try:
+            # Epic's deep-link documentation recommends checking the handler.
+            with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "com.epicgames.launcher"):
+                pass
+            os.startfile(EPIC_FORTNITE_URI)
+            return True  # Protocol request sent, NOT proof game is running.
+        except (OSError, ValueError):
+            return False
 
     def grab(self) -> np.ndarray:
         image = ImageGrab.grab()  # foreground primary display in borderless windowed mode
@@ -193,6 +213,57 @@ class WinIO:
                     _key(scan, up=True)
                 except OSError:
                     pass
+
+    def slide_sequence(self, seconds: float, jump: bool,
+                       should_abort: Callable[[], bool]) -> None:
+        """Sprint first, tap crouch, then optionally jump. Release every key.
+
+        The OS event request does not prove that a protected game accepted it.
+        """
+        if should_abort():
+            return
+        held: list[str] = []
+
+        def down(name: str) -> None:
+            _key(SCANCODES[name], up=False)
+            held.append(name)
+
+        def up(name: str) -> None:
+            _key(SCANCODES[name], up=True)
+            held.remove(name)
+
+        def pause(seconds_to_wait: float) -> None:
+            deadline = time.monotonic() + max(0.0, seconds_to_wait)
+            while time.monotonic() < deadline and not should_abort():
+                time.sleep(min(.025, max(0.0, deadline - time.monotonic())))
+
+        try:
+            down("w")
+            pause(.08)
+            if should_abort():
+                return
+            down("shift")
+            pause(.35)
+            if should_abort():
+                return
+            down("ctrl")
+            pause(.08)
+            up("ctrl")  # A tap, not a permanent simultaneous W+Shift+Ctrl hold.
+            pause(.28)
+            if jump and not should_abort():
+                down("space")
+                pause(.10)
+                up("space")
+            pause(max(0.0, min(float(seconds), 4.0) - .9))
+        finally:
+            release_error = None
+            for key in reversed(held):
+                try:
+                    _key(SCANCODES[key], up=True)
+                except OSError as exc:
+                    release_error = release_error or exc
+            if release_error is not None:
+                raise release_error
 
     def move_mouse_relative(self, dx: int, dy: int, seconds: float,
                             should_abort: Callable[[], bool]) -> None:
@@ -348,28 +419,39 @@ class WinIO:
 
 
 class HotkeyPoller(threading.Thread):
-    """Global shortcuts using GetAsyncKeyState edge detection; no key recording."""
+    """Configurable shortcuts. No hook, key logging, or simultaneous callbacks."""
 
     def __init__(self, bindings: dict[str, Callable[[], None]]):
         super().__init__(daemon=True, name="hotkeys")
-        self.bindings = {VK[k]: cb for k, cb in bindings.items()}
+        self._lock = threading.RLock()
+        self.bindings: dict[int, Callable[[], None]] = {}
+        self._prev: dict[int, bool] = {}
+        self.set_bindings(bindings)
+
+    def set_bindings(self, bindings: dict[str, Callable[[], None]]) -> None:
+        """Replace shortcuts live; never trigger a key already held during remap."""
+        mapped = {VK[key]: callback for key, callback in bindings.items()}
+        with self._lock:
+            self.bindings = mapped
+            self._prev = {
+                vk: bool(user32.GetAsyncKeyState(vk) & 0x8000)
+                for vk in mapped
+            }
 
     def run(self) -> None:
-        prev = {vk: False for vk in self.bindings}
         while True:
-            for vk, cb in self.bindings.items():
-                down = bool(user32.GetAsyncKeyState(vk) & 0x8000)
-                if down and not prev[vk]:
-                    # Never execute callbacks on the polling thread. A slow
-                    # screenshot/probe/start would otherwise block F8 and F10.
-                    def invoke(callback=cb):
-                        try:
-                            callback()
-                        except Exception:
-                            # Keep the global hotkey poller alive on failures.
-                            import traceback
-                            traceback.print_exc()
-                    threading.Thread(target=invoke, name=f"hotkey-{vk}",
-                                     daemon=True).start()
-                prev[vk] = down
+            with self._lock:
+                for vk, cb in self.bindings.items():
+                    down = bool(user32.GetAsyncKeyState(vk) & 0x8000)
+                    if down and not self._prev.get(vk, False):
+                        # Never run slow start/stop/screen operations on poller thread.
+                        def invoke(callback=cb):
+                            try:
+                                callback()
+                            except Exception:
+                                import traceback
+                                traceback.print_exc()
+                        threading.Thread(target=invoke, name=f"hotkey-{vk}",
+                                         daemon=True).start()
+                    self._prev[vk] = down
             time.sleep(0.03)

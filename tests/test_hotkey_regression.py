@@ -1,4 +1,4 @@
-"""Check non-Windows source consistency before distributing Windows builds."""
+"""Source consistency checks for dynamically remappable Windows hotkeys."""
 import ast
 from pathlib import Path
 
@@ -7,13 +7,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_windows_hotkeys_have_vk_mappings():
     webapp = (ROOT / "webapp.py").read_text(encoding="utf-8")
-    io_tree = ast.parse((ROOT / "winio.py").read_text(encoding="utf-8"))
-    vk = next(node.value for node in io_tree.body if isinstance(node, ast.Assign)
+    io_source = (ROOT / "winio.py").read_text(encoding="utf-8")
+    tree = ast.parse(io_source)
+    vk = next(node.value for node in tree.body if isinstance(node, ast.Assign)
               and any(isinstance(target, ast.Name) and target.id == "VK" for target in node.targets))
-    mapped = ast.literal_eval(vk)
-    for key in ("F6", "F7", "F8", "F9", "F10"):
-        assert f'"{key}": ' in webapp
-        assert key in mapped
+    assert isinstance(vk, (ast.Dict, ast.DictComp))
+    assert 'range(1, 13)' in io_source
+    assert "def set_bindings(" in io_source
+    assert '"F6": backend.engine.input_probe' in webapp
+    assert '"F9": backend.hotkey_count' in webapp
+    for action in ("start", "stop", "pause"):
+        assert f"backend.cfg.hotkey_{action}: backend.{action}" in webapp
 
 
 def test_release_and_installer_versions_match():
