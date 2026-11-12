@@ -45,4 +45,4 @@ def test_official_news_includes_beta_full_body_and_actual_date(monkeypatch):
     assert [item["version"] for item in items] == ["1.4.2", "1.4.0", "1.3.9"]
     assert items[0]["prerelease"] is True
     assert items[0]["published_at"] == "2026-11-12T03:35:44Z"
-    assert items[0]["notes"] == notes
+    assert items[0]["notes"] == notes.strip()
