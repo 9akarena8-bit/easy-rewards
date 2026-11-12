@@ -109,18 +109,16 @@ class WinIO:
         "?action=launch&silent=true"
     )
 
-    def launch_game(self) -> bool:
-        """Request the user's installed Epic Launcher to start Fortnite.
-
-        No direct process injection, authentication or anti-cheat interaction.
-        Returns protocol-dispatch status, not a claim that Fortnite is ready.
-        """
-        if self.game_window_found():
-            return self.focus_game() or self.game_window_found()
+    def epic_launcher_available(self) -> bool:
         try:
             with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "com.epicgames.launcher"):
-                pass
+                return True
         except OSError:
+            return False
+
+    def launch_game(self) -> bool:
+        """Request launch through the installed Epic Launcher protocol."""
+        if not self.epic_launcher_available():
             return False
         os.startfile(self.EPIC_FORTNITE_URI)
         return True
@@ -447,10 +445,14 @@ class HotkeyPoller(threading.Thread):
                  Callable[[], dict[str, Callable[[], None]]]):
         super().__init__(daemon=True, name="hotkeys")
         self.bindings = bindings
+        self._shutdown = threading.Event()
+
+    def close(self) -> None:
+        self._shutdown.set()
 
     def run(self) -> None:
         prev = {vk: False for vk in VK.values()}
-        while True:
+        while not self._shutdown.is_set():
             try:
                 configured = self.bindings() if callable(self.bindings) else self.bindings
                 active = {VK[key]: cb for key, cb in configured.items() if key in VK}
@@ -471,4 +473,4 @@ class HotkeyPoller(threading.Thread):
                     threading.Thread(target=invoke, name=f"hotkey-{vk}",
                                      daemon=True).start()
                 prev[vk] = down
-            time.sleep(0.03)
+            self._shutdown.wait(0.03)

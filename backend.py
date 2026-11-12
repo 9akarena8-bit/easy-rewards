@@ -10,6 +10,7 @@ import base64
 import os
 import sys
 import collections
+from dataclasses import replace
 import threading
 import time
 from pathlib import Path
@@ -72,7 +73,7 @@ class Backend:
         "templates", "delete_template", "capture_screenshot", "save_template", "test_templates",
         "counter_add", "counter_set", "counter_edit", "counter_new", "counter_delete", "tokens_add",
         "prize_add", "prize_toggle", "prize_delete", "tracker_set", "tracker_export", "tracker_import",
-        "tracker_reset", "update_check", "update_prepare", "update_install", "open_mini", "close_mini",
+        "tracker_reset", "update_check", "update_check_async", "update_prepare", "update_install", "open_mini", "close_mini",
         "input_probe_delayed", "create_support_report", "open_support",
         "discord_configure", "discord_test", "discord_clear",
         "payment_interest_create", "license_activate", "license_check",
@@ -84,6 +85,7 @@ class Backend:
         self.hooks = hooks or Hooks()
         self.cfg_path = self.base / "config.json"
         self.templates_root = self.base / "templates"
+        self._config_lock = threading.RLock()
         self.cfg = Config.load(self.cfg_path)
         # Never let a malformed/old config disable emergency Stop or bind
         # reserved F12 as Start. Settings can also be edited outside the UI.
@@ -116,6 +118,7 @@ class Backend:
         self._start_workers = 0  # includes cancelled initializers still draining
         self._start_phase = "idle"
         self._start_error = ""
+        self._launch_status = "idle"
         # Window enumeration can block under Windows. Never run it synchronously
         # from pywebview's 800 ms state polling path.
         self._game_lookup_lock = threading.Lock()
@@ -124,6 +127,8 @@ class Backend:
         self._game_lookup_last_at = 0.0
         self._game_lookup_value = False
         self._game_lookup_error = ""
+        launcher_available = getattr(self.io, "epic_launcher_available", None)
+        self._epic_launcher_available = launcher_available() if callable(launcher_available) else None
         self.reward_stats = RewardStats(self.base / "rewards.json")
         self.payment_drafts = payment_hub.LocalInterestDrafts(self.base / "payment_interest_drafts.json")
         # Opt-in integration preview only; unset in production until the
@@ -375,7 +380,8 @@ class Backend:
                          "sequence": self._control_sequence,
                          "start_pending": self._start_pending,
                          "start_phase": self._start_phase,
-                         "start_error": self._start_error},
+                         "start_error": self._start_error,
+                         "launch_status": self._launch_status},
             "cfg": {k: getattr(self.cfg, k) for k in Config.__dataclass_fields__},
             "engine": {"state": ("stopped" if not e.running and e.state == "stopping"
                                  else "stopping" if e.stopping
@@ -404,6 +410,7 @@ class Backend:
                 "game_lookup_pending": self._game_lookup_pending,
                 "game_lookup_known": self._game_lookup_known,
                 "game_lookup_error": self._game_lookup_error,
+                "epic_launcher_available": self._epic_launcher_available,
                 "foreground_process": (self.io.foreground_process() if hasattr(self.io, "foreground_process") else ""),
                 "game_title": str(getattr(self.io, "window_title", "Fortnite")),
                 "template_count": len(e.templates),
@@ -433,6 +440,9 @@ class Backend:
         """
         self._control_received("start")
         if self.engine.running:
+            if getattr(self.engine, "stopping", False):
+                self.engine.start()
+                return {"ok": True, "reason": "start_queued"}
             was_paused = self.engine.paused
             resumed = self.engine.start()
             if was_paused and not resumed:
@@ -449,6 +459,7 @@ class Backend:
             self._start_pending = True
             self._start_phase = "queued"
             self._start_error = ""
+            self._launch_status = "checking"
         threading.Thread(target=self._start_in_background, args=(generation,),
                          name="engine-launch", daemon=True).start()
         return {"ok": True, "reason": "start_queued"}
@@ -475,6 +486,7 @@ class Backend:
                         if generation == self._start_serial:
                             self._start_phase = "not_started"
                             self._start_error = "engine_disabled_or_not_started"
+                            self._launch_status = "idle"
                     return
                 with self._start_guard:
                     cancelled = generation != self._start_serial
@@ -491,6 +503,7 @@ class Backend:
                 if generation == self._start_serial:
                     self._start_phase = "start_failed"
                     self._start_error = type(exc).__name__ + ": " + str(exc)[:180]
+                    self._launch_status = "idle"
             self.log("log.error", err="start: " + type(exc).__name__)
         finally:
             with self._start_guard:
@@ -503,20 +516,24 @@ class Backend:
 
     def _activate_game_after_start(self, generation: int) -> None:
         """Optional OS focus/launcher request cannot block Python API or start."""
+        launch_status = "idle"
         try:
-            found = bool(getattr(self.io, "game_window_found", lambda: False)())
+            active = self.io.game_in_foreground()
+            found = active or bool(getattr(self.io, "game_window_found", lambda: False)())
             with self._start_guard:
-                if generation != self._start_serial or not self.engine.running:
+                if generation != self._start_serial or not self.engine.running or getattr(self.engine, "paused", False):
                     return
-            if found and self.cfg.auto_focus:
-                self.io.focus_game()
-            elif not found and self.cfg.afk_launch_game:
+            if found:
+                launch_status = "already_open"
+                # The engine owns focus retries. A late lookup must never
+                # bring the game back after the user has Alt+Tabbed.
+            elif not self.cfg.afk_launch_game:
+                launch_status = "disabled"
+            else:
                 launch = getattr(self.io, "launch_game", None)
-                if callable(launch) and not launch():
-                    with self._start_guard:
-                        if generation == self._start_serial:
-                            self._start_error = "epic_launcher_unavailable"
+                launch_status = "requested" if callable(launch) and launch() else "unavailable"
         except Exception as exc:
+            launch_status = "error"
             with self._start_guard:
                 if generation == self._start_serial:
                     self._start_error = "window_activation: " + type(exc).__name__
@@ -524,6 +541,9 @@ class Backend:
             with self._start_guard:
                 if generation == self._start_serial and self.engine.running:
                     self._start_phase = "engine_running"
+                    self._launch_status = launch_status
+                    if launch_status == "unavailable":
+                        self._start_error = "epic_launcher_unavailable"
 
     def input_probe_delayed(self, target: str = "fortnite") -> dict:
         """Schedule a test while the user switches to the target window."""
@@ -551,6 +571,7 @@ class Backend:
             # A subsequent Start is allowed when phase == cancelled.
             self._start_pending = self._start_workers > 0
             self._start_phase = "cancelled"
+            self._launch_status = "idle"
         self.engine.stop()
 
     def pause(self) -> dict:
@@ -565,10 +586,12 @@ class Backend:
         """Switch only to a verified Fortnite window, if Windows permits it."""
         self._control_received("focus")
         try:
-            if not hasattr(self.io, "game_window_found") or not self.io.game_window_found():
-                self.engine.focus_result = "not_found"
-                return {"ok": False, "reason": "not_found"}
-            focused = bool(self.io.game_in_foreground() or self.io.focus_game())
+            focused = self.io.game_in_foreground()
+            if not focused:
+                if not hasattr(self.io, "game_window_found") or not self.io.game_window_found():
+                    self.engine.focus_result = "not_found"
+                    return {"ok": False, "reason": "not_found"}
+                focused = bool(self.io.focus_game())
             self.engine.focus_result = "focused" if focused else "denied"
             return {"ok": focused, "reason": "focused" if focused else "denied"}
         except Exception as exc:
@@ -581,18 +604,27 @@ class Backend:
     # ------------------------------------------------------------ config
     def set_config(self, patch: dict) -> dict:
         """Apply validated settings. Returns {"ok": bool, "rejected": [keys]}."""
+        if not isinstance(patch, dict):
+            return {"ok": False, "rejected": [], "error": "invalid_settings"}
+        with self._config_lock:
+            return self._apply_config(patch)
+
+    def _apply_config(self, patch: dict) -> dict:
+        cfg = replace(self.cfg)
         rejected = []
-        for k, v in (patch or {}).items():
+        for k, v in patch.items():
             try:
                 if k in NUM_LIMITS:
                     typ, lo, hi = NUM_LIMITS[k]
-                    setattr(self.cfg, k, max(lo, min(hi, typ(v))))
+                    setattr(cfg, k, max(lo, min(hi, typ(v))))
                 elif k in BOOLS:
-                    setattr(self.cfg, k, bool(v))
+                    if not isinstance(v, bool):
+                        raise ValueError(k)
+                    setattr(cfg, k, v)
                 elif k in STRS:
                     if v not in STRS[k]:
                         raise ValueError(k)
-                    setattr(self.cfg, k, v)
+                    setattr(cfg, k, v)
                 elif k in ("afk_start_hotkey", "afk_stop_hotkey", "afk_pause_hotkey"):
                     key = str(v).strip().upper()
                     allowed = (AFK_PAUSE_HOTKEY_CHOICES if k == "afk_pause_hotkey"
@@ -602,30 +634,38 @@ class Backend:
                               if name != k]
                     if (key not in allowed or
                             (k == "afk_start_hotkey" and key == "F12") or
-                            key in (getattr(self.cfg, name) for name in others)):
+                            key in (getattr(cfg, name) for name in others)):
                         raise ValueError(k)
-                    setattr(self.cfg, k, key)
+                    setattr(cfg, k, key)
                 elif k == "afk_keys":
                     keys = "".join(dict.fromkeys(c for c in str(v).lower() if c in "wasd"))
                     if not keys:
                         raise ValueError(k)
-                    self.cfg.afk_keys = keys
+                    cfg.afk_keys = keys
                 elif k == "update_url":
                     v = str(v).strip()
                     if v and not v.lower().startswith("https://"):
                         raise ValueError(k)
-                    self.cfg.update_url = v
+                    cfg.update_url = v
                 else:
                     rejected.append(k)
             except (TypeError, ValueError):
                 rejected.append(k)
         # Keep the pause range valid even if only one endpoint was edited.
-        if self.cfg.afk_pause_min > self.cfg.afk_pause_max:
-            if "afk_pause_min" in (patch or {}):
-                self.cfg.afk_pause_max = self.cfg.afk_pause_min
+        if cfg.afk_pause_min > cfg.afk_pause_max:
+            if "afk_pause_min" in patch:
+                cfg.afk_pause_max = cfg.afk_pause_min
             else:
-                self.cfg.afk_pause_min = self.cfg.afk_pause_max
-        self._save_cfg()
+                cfg.afk_pause_min = cfg.afk_pause_max
+        changes = {name: value for name, value in vars(cfg).items()
+                   if value != getattr(self.cfg, name)}
+        if changes:
+            try:
+                cfg.save(self.cfg_path)
+            except OSError:
+                return {"ok": False, "rejected": rejected, "error": "save_failed"}
+            for name, value in changes.items():
+                setattr(self.cfg, name, value)
         return {"ok": not rejected, "rejected": rejected}
 
     # ------------------------------------------------------------ templates
@@ -786,28 +826,45 @@ class Backend:
         return list(self._release_news)
 
     # ------------------------------------------------------------ updates
+    def update_check_async(self) -> dict:
+        """Queue a manual check so the JS bridge stays responsive."""
+        if not self._update_lock.acquire(blocking=False):
+            return dict(self._upd)
+        try:
+            if self._upd["status"] in ("checking", "ready", "downloading", "installer_started"):
+                return dict(self._upd)
+            self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
+            queued = dict(self._upd)
+            threading.Thread(target=self.update_check, name="manual-update-check", daemon=True).start()
+            return queued
+        finally:
+            self._update_lock.release()
+
     def update_check(self, url: str | None = None) -> dict:
         """Check releases without triggering an installation.
 
         The locking prevents the 5-minute background poll from racing a click
         to exit-and-update or a cached-installer download.
         """
+        with self._update_lock:
+            return self._check_updates(url)
+
+    def _check_updates(self, url: str | None) -> dict:
         if self.release_mode:
-            with self._update_lock:
-                if self._upd["status"] in ("ready", "downloading", "installer_started"):
-                    return dict(self._upd)
-                self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
-                self._release_manifest = None
-                try:
-                    self._release_manifest = release_updater.latest_release(self.version)
-                    if self._release_manifest is None:
-                        self._upd = {"status": "latest", "version": self.version, "notes": "", "error": ""}
-                    else:
-                        self._upd = {"status": "available", "version": self._release_manifest["version"],
-                                     "notes": self._release_manifest.get("notes", ""), "error": ""}
-                except Exception as exc:
-                    self._upd = {"status": "error", "version": "", "notes": "", "error": str(exc)}
+            if self._upd["status"] in ("ready", "downloading", "installer_started"):
                 return dict(self._upd)
+            self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
+            self._release_manifest = None
+            try:
+                self._release_manifest = release_updater.latest_release(self.version)
+                if self._release_manifest is None:
+                    self._upd = {"status": "latest", "version": self.version, "notes": "", "error": ""}
+                else:
+                    self._upd = {"status": "available", "version": self._release_manifest["version"],
+                                 "notes": self._release_manifest.get("notes", ""), "error": ""}
+            except Exception as exc:
+                self._upd = {"status": "error", "version": "", "notes": "", "error": str(exc)}
+            return dict(self._upd)
         url = (url if url is not None else self.cfg.update_url).strip()
         if not url:
             self._upd = {"status": "need_url", "version": "", "notes": "", "error": ""}
@@ -818,6 +875,7 @@ class Backend:
                 self._upd = {"status": "error", "version": "", "notes": "", "error": "https"}
                 return dict(self._upd)
         self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
+        self._manifest = None
         try:
             version, manifest = updater.check(self.base, url)
         except Exception as exc:
