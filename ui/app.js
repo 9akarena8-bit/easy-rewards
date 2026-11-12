@@ -220,11 +220,31 @@ const PAGE = {
   },
   afk() {
     const c = ST.cfg, e = ST.engine;
+    const hotkeyLocale = (ru, en, uk) => ({ru, en, uk})[c.ui_language] || ru;
+    const hotkeyOptions = Array.from({length:12}, (_, i) => "F" + (i + 1))
+      .filter(key => !["F6", "F9"].includes(key));
+    const hotkeySelect = (setting, label) => `<label class="afk-key-field"><span>${label}</span>
+      <select class="in" data-cfg="${setting}" aria-label="${label}">
+        ${hotkeyOptions.map(key => `<option value="${key}" ${c[setting] === key ? "selected" : ""}>${key}</option>`).join("")}
+      </select></label>`;
     const f = (label, inner) => `<div class="field"><span>${label}</span>${inner}</div>`;
     const sl = (key, min, max, step) => `<div class="row"><input type="range" data-cfg="${key}" min="${min}" max="${max}" step="${step}" value="${c[key]}"><b data-out="${key}">${c[key]}</b></div>`;
     const status = `<span class="pill"><span class="dot ${e.running && !e.paused ? "on" : ""}"></span>${t("state." + e.state)}</span>`;
     return `<div class="home-topline"><div><div class="eyebrow">✧ ${t("afk.subtitle_small")}</div><div class="intro-head">${t("afk.title")}<span class="intro-line"></span></div></div>${status}</div>
     <p class="mute">${t("afk.v13desc")}</p>
+    <div class="card afk-hotkey-card">
+      <h3>${hotkeyLocale("Горячие клавиши", "Keyboard shortcuts", "Гарячі клавіші")}</h3>
+      <div class="afk-hotkey-grid">
+        ${hotkeySelect("hotkey_start", hotkeyLocale("Запуск", "Start", "Запуск"))}
+        ${hotkeySelect("hotkey_stop", hotkeyLocale("Остановка", "Stop", "Зупинка"))}
+        ${hotkeySelect("hotkey_pause", hotkeyLocale("Пауза", "Pause", "Пауза"))}
+      </div>
+      <p class="mute">${hotkeyLocale(
+        "F6 — диагностика, F9 — счётчик. Одинаковые клавиши назначать нельзя. При запуске из лаунчера окно Fortnite активируется, если Windows разрешит.",
+        "F6 — diagnostics, F9 — counter. Shortcuts must be unique. Starting from the launcher requests Fortnite focus when Windows permits.",
+        "F6 — діагностика, F9 — лічильник. Клавіші мають бути різні. Запуск із лаунчера активує Fortnite, якщо Windows дозволить."
+      )}</p>
+    </div>
     <div class="row" style="margin-bottom:14px;flex-wrap:wrap">
       <button class="btn pri" data-act="start" ${e.running ? "disabled" : ""}>▶ ${t("btn.start")}</button>
       <button class="btn" data-act="stop" ${!e.running ? "disabled" : ""}>■ ${t("btn.stop")}</button>
@@ -610,7 +630,14 @@ document.addEventListener("change", async ev => { const e = ev.target;
   if (e.id === "pay-method") { payMethod = e.value; paymentDraft = null; return render(true); }
   if (e.id === "pay-game") { payGame = e.value; paymentDraft = null; return render(true); }
   if (e.id === "role") tplRole = e.value;
-  if (e.dataset.cfg) { await patch({[e.dataset.cfg]: e.value}); toast(t("toast.saved")); }
+  if (e.dataset.cfg) {
+    const result = await api.set_config({[e.dataset.cfg]: e.value});
+    await tick();
+    if (result?.ok === false) {
+      toast(({ru:"Нельзя назначить эту клавишу: выбери свободную F-клавишу.",en:"Shortcut unavailable: choose a free F-key.",uk:"Ця клавіша недоступна: вибери вільну F-клавішу."})[ST.cfg.ui_language] || "Shortcut unavailable");
+      render(true);
+    } else toast(t("toast.saved"));
+  }
   else if (e.id === "wk") { await api.tracker_set({week_start: e.value}); tick(); }
   else if (e.id === "boost" || e.id === "odds") { /* Save explicitly with the button. */ } });
 // The pywebviewready event is dispatched on WINDOW, not document.
