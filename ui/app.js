@@ -361,7 +361,7 @@ const PAGE = {
       <p class="mute">${t("subs.payments_disabled")}</p><div class="row">
       <button type="button" class="btn" disabled>${t("subs.card")}</button>
       <button type="button" class="btn" disabled>${t("subs.sbp")}</button></div></div>
-    ${paymentHubMarkup()}`;
+    ${paymentHubMarkup()}${licensePreviewMarkup()}`;
   },
   support() {
     const links = ST.support_contacts || {};
@@ -465,6 +465,35 @@ function paymentHubMarkup() {
     <p class="mute" style="margin-top:15px">${t("payments.security")}</p>
   </section>`;
 }
+function licensePreviewMarkup() {
+  const info = ST.license_status || {configured:false,ok:false,error:"server_not_configured"};
+  const tr = (ru,en,uk) => ({ru,en,uk})[ST.cfg.ui_language] || ru;
+  const expiration = Number.isInteger(info.expires_at) && info.expires_at > 0
+    ? new Date(info.expires_at * 1000).toLocaleString(ST.cfg.ui_language === "en" ? "en-GB" : "ru-RU")
+    : "—";
+  return `<section class="card" id="license-preview" style="margin-top:16px">
+    <h3>${tr("Активация лицензии — тестирование", "License activation — testing", "Активація ліцензії — тестування")}</h3>
+    <p class="mute">${tr(
+      "Сервер проверки подключается отдельно. Здесь не проводится оплата, а действующий анти-AFK пока не блокируется лицензией.",
+      "Connect a merchant server separately. This does not charge anything or enforce access to anti-AFK yet.",
+      "Сервер перевірки підключається окремо. Оплати немає, доступ до Anti-AFK ще не обмежується."
+    )}</p>
+    <p class="mute">${tr("Сервер", "Server", "Сервер")}: <b>${info.configured ? tr("Настроен","Configured","Налаштований") : tr("Не настроен","Not configured","Не налаштований")}</b></p>
+    <p class="mute">${tr("Проверка", "Verification", "Перевірка")}: <b>${info.ok ? tr("Ключ подтверждён сервером","Server verified the key","Ключ підтверджено сервером") : esc(info.error || "—")}</b></p>
+    <p class="mute">${tr("Срок действия по серверу", "Server-reported expiration", "Термін дії за сервером")}: ${esc(expiration)}</p>
+    <div class="row" style="flex-wrap:wrap;gap:8px;margin:11px 0">
+      <input id="license-key" type="password" class="in" maxlength="120" autocomplete="off"
+        placeholder="FPT-XXXXXXXXXXXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" style="flex:1;min-width:250px" ${info.configured ? "" : "disabled"}>
+      <button class="btn pri" data-act="license_activate" ${info.configured ? "" : "disabled"}>${tr("Активировать", "Activate", "Активувати")}</button>
+      <button class="btn" data-act="license_check" ${info.configured ? "" : "disabled"}>${tr("Проверить", "Verify", "Перевірити")}</button>
+    </div>
+    <p class="mute">${tr(
+      "Для теста установи FPT_LICENSE_SERVER_URL на HTTPS-адрес своего сервера и перезапусти лаунчер. Не отправляй ключи в поддержку или публичные чаты.",
+      "Set FPT_LICENSE_SERVER_URL to your HTTPS merchant server and restart the launcher for testing. Keep license keys private.",
+      "Задайте FPT_LICENSE_SERVER_URL з HTTPS-адресою сервера і перезапустіть застосунок. Не публікуйте ключі."
+    )}</p>
+  </section>`;
+}
 function renderMini() {
   const e = ST.engine, T = ST.tracker;
   $("#app").innerHTML = `<div class="minibox"><div class="minirow"><span class="pill"><span class="dot ${e.running ? "on" : ""}"></span>${t("state." + e.state)}</span>
@@ -539,6 +568,18 @@ document.addEventListener("click", async ev => {
     const result = await api.discord_clear();
     toast(result.ok ? t("discord.cleared") : t("support.failed") + ": " + String(result.error || ""));
     return tick();
+  }
+  if (a === "license_activate") {
+    const key = ($("#license-key")?.value || "").trim();
+    if (!key) {toast("Укажи лицензионный ключ"); return;}
+    const result = await api.license_activate(key);
+    toast(result.ok ? "Сервер подтвердил ключ (тест)" : "Лицензия: " + String(result.error || "ошибка"));
+    await tick(); return render(true);
+  }
+  if (a === "license_check") {
+    const result = await api.license_check();
+    toast(result.ok ? "Ключ действителен (тест)" : "Лицензия: " + String(result.error || "ошибка"));
+    await tick(); return render(true);
   }
   if (a === "payment_draft") {
     const skinNote = payMethod === "steam_items" && typeof window.skinpayDraftSelection === "function"
