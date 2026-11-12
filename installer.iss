@@ -1,13 +1,13 @@
 ; Easy Rewards per-user installer; generated on Windows with Inno Setup.
-#define AppName "Easy Rewards"
-#define AppVersion "1.3.9"
+#define AppName "Fortnite Pirate Token"
+#define AppVersion "1.4.0"
 #define AppExe "EasyRewards.exe"
 
 [Setup]
 AppId={{773F19A1-28F9-4D86-8ABE-EF92C41C29E4}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher=Easy Rewards
+AppPublisher=Fortnite Pirate Token (unofficial)
 DefaultDirName={localappdata}\Programs\EasyRewards
 DefaultGroupName=Easy Rewards
 PrivilegesRequired=lowest
