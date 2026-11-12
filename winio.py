@@ -214,6 +214,57 @@ class WinIO:
                 except OSError:
                     pass
 
+    def slide_sequence(self, seconds: float, jump: bool,
+                       should_abort: Callable[[], bool]) -> None:
+        """Sprint first, tap crouch, then optionally jump. Release every key.
+
+        The OS event request does not prove that a protected game accepted it.
+        """
+        if should_abort():
+            return
+        held: list[str] = []
+
+        def down(name: str) -> None:
+            _key(SCANCODES[name], up=False)
+            held.append(name)
+
+        def up(name: str) -> None:
+            _key(SCANCODES[name], up=True)
+            held.remove(name)
+
+        def pause(seconds_to_wait: float) -> None:
+            deadline = time.monotonic() + max(0.0, seconds_to_wait)
+            while time.monotonic() < deadline and not should_abort():
+                time.sleep(min(.025, max(0.0, deadline - time.monotonic())))
+
+        try:
+            down("w")
+            pause(.08)
+            if should_abort():
+                return
+            down("shift")
+            pause(.35)
+            if should_abort():
+                return
+            down("ctrl")
+            pause(.08)
+            up("ctrl")  # A tap, not a permanent simultaneous W+Shift+Ctrl hold.
+            pause(.28)
+            if jump and not should_abort():
+                down("space")
+                pause(.10)
+                up("space")
+            pause(max(0.0, min(float(seconds), 4.0) - .9))
+        finally:
+            release_error = None
+            for key in reversed(held):
+                try:
+                    _key(SCANCODES[key], up=True)
+                except OSError as exc:
+                    release_error = release_error or exc
+            if release_error is not None:
+                raise release_error
+
     def move_mouse_relative(self, dx: int, dy: int, seconds: float,
                             should_abort: Callable[[], bool]) -> None:
         """Relative mouse motion for camera controls, not cursor repositioning."""
