@@ -41,7 +41,7 @@ NUM_LIMITS = {          # key: (type, lo, hi)
 }
 # Reserve F6 input test, F9 counter and F10 pause. Distinct Start/Stop keys.
 AFK_HOTKEY_CHOICES = tuple(f"F{i}" for i in range(1, 13) if i not in (6, 9, 10))
-BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "afk_launch_game", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
+BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "afk_launch_game", "afk_pause_on_alt_tab", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
          "afk_slide_enabled", "afk_camera_enabled", "afk_slot_enabled", "afk_pickaxe_enabled",
          "afk_grenade_enabled", "afk_weapon_enabled", "afk_replay_auto_detect")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
@@ -234,7 +234,7 @@ class Backend:
                        "history": self._history(),
                        "input_count": e.input_count, "last_input": e.last_input,
                        "input_error": e.last_input_error,
-                       "wait_reason": e.wait_reason,
+                       "wait_reason": e.wait_reason, "pause_reason": e.pause_reason,
                        "probe_status": e.probe_status, "probe_detail": e.probe_detail,
                        "probe_at": e.probe_at, "probe_target": e.probe_target,
                        "replay_count": e.replay_count, "replay_status": e.replay_status,
@@ -273,8 +273,11 @@ class Backend:
         """
         self._control_received("start")
         if self.engine.running:
-            self.engine.start()  # existing resume / queued-restart semantics
-            return {"ok": True, "reason": "already_running"}
+            was_paused = self.engine.paused
+            resumed = self.engine.start()
+            if was_paused and not resumed:
+                return {"ok": False, "reason": "return_to_game"}
+            return {"ok": True, "reason": "resumed" if was_paused else "already_running"}
         if self.cfg.afk_launch_game and not getattr(self.io, "game_window_found", lambda: False)():
             launcher = getattr(self.io, "launch_game", None)
             if callable(launcher):
@@ -316,9 +319,13 @@ class Backend:
         self._control_received("stop")
         self.engine.stop()
 
-    def pause(self) -> None:
+    def pause(self) -> dict:
         self._control_received("pause")
-        self.engine.toggle_pause()
+        was_paused = self.engine.paused
+        changed = self.engine.toggle_pause()
+        if not changed:
+            return {"ok": False, "reason": "return_to_game" if was_paused else "not_running"}
+        return {"ok": True, "reason": "resumed" if was_paused else "paused"}
 
     def focus_game_now(self) -> dict:
         """Switch only to a verified Fortnite window, if Windows permits it."""
