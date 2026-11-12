@@ -184,3 +184,13 @@ def test_uniform_lobby_capture_rejected_and_switch_persists(tmp_path):
     assert backend.save_template("lobby_play", "flat", 0, 0, 1, 1)["error"] == "low_detail_template"
     assert backend.set_config({"lobby_autostart_enabled": False})["ok"]
     assert Backend(tmp_path, io).cfg.lobby_autostart_enabled is False
+
+def test_alt_tab_resets_stale_lobby_candidates(tmp_path):
+    eng, io, frame = make_engine(tmp_path)
+    frame("lobby_play")
+    eng._tick()
+    assert eng._lobby_candidate_hits == 1
+    io.active = False
+    eng._tick()
+    assert eng._lobby_candidate_hits == 0
+    assert not io.clicks

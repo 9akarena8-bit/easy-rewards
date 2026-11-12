@@ -109,7 +109,7 @@
       <h2>${ui("Добро пожаловать в", "Welcome to", "Ласкаво просимо до")}<br><span>Fortnite Pirate Token</span></h2>
       <p class="gold-slogan">${ui("Получай награды — не трать силы и нервы.", "Earn rewards — save your time and energy.", "Отримуй нагороди — бережи час і сили.")}</p>
       <div class="gold-hero-actions"><button class="btn pri gold-play" data-act="start" ${e.running ? "disabled" : ""}><span>▶</span> ${t("btn.start")}</button>
-       <button class="btn gold-stop" data-act="stop" ${!e.running ? "disabled" : ""}>■ ${t("btn.stop")}</button>
+       <button class="btn gold-stop" data-act="stop" ${!e.running && !ST.controls?.start_pending ? "disabled" : ""}>■ ${t("btn.stop")}</button>
        <button class="btn gold-pause" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} ${e.paused ? t("btn.resume") : t("btn.pause")}</button></div>
       <div class="gold-hero-meta">${statusBadge()}<span class="gold-version">${ui("Версия", "Version", "Версія")} ${safe(ST.version)}</span></div>
     </div><div class="gold-hero-visual" aria-hidden="true">

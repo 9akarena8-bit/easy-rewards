@@ -424,6 +424,8 @@ class Engine:
         if self._stop.is_set() or self._paused.is_set():
             return
         self._screen_epoch += 1
+        self._lobby_candidate_hits = 0
+        self._lobby_hud_hits = 0
         self._run_seconds += max(0., time.monotonic() - self._tick_mark)
         self.pause_reason = "focus_lost"
         self.wait_reason = "focus_lost"
@@ -440,6 +442,8 @@ class Engine:
                 self.wait_reason = "not_foreground"
                 return False
             self._screen_epoch += 1
+            self._lobby_candidate_hits = 0
+            self._lobby_hud_hits = 0
             self._tick_mark = time.monotonic()
             self._next_afk = self._tick_mark + max(.35, self._afk_wait())
             self._ever_foreground = True
@@ -450,6 +454,8 @@ class Engine:
             self.log("log.resumed")
             return True
         self._screen_epoch += 1
+        self._lobby_candidate_hits = 0
+        self._lobby_hud_hits = 0
         self._run_seconds += max(0., time.monotonic() - self._tick_mark)
         self._paused.set()
         self.pause_reason = "manual"
