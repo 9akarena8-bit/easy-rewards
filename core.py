@@ -25,7 +25,15 @@ from replay_detect import yellow_replay_button
 #   start_*  : button that begins the next match (counts a game)
 #   result_* : any button on result / reward screens (continue, claim all, back to lobby)
 #   wait_*   : a loading / "connecting" screen - nothing is clicked and anti-AFK stays quiet
-ROLES = ("start", "result", "wait", "reward", "replay", "death")
+LOBBY_BUTTON_ROLES = ("lobby_play", "lobby_ready", "lobby_confirm")
+LOBBY_ROLES = (*LOBBY_BUTTON_ROLES, "match_hud")
+ROLES = ("start", "result", "wait", "reward", "replay", "death", *LOBBY_ROLES)
+
+
+def template_role(stem: str) -> str:
+    """Resolve longest filename prefix (roles can contain underscores)."""
+    return next((role for role in sorted(ROLES, key=len, reverse=True)
+                 if stem.startswith(role + "_")), "")
 
 
 # ----------------------------------------------------------------- config
@@ -45,6 +53,7 @@ class Config:
     require_foreground: bool = True  # only act while the game window is active
     auto_focus: bool = True          # try to bring the game window to front
     afk_enabled: bool = True
+    lobby_autostart_enabled: bool = True  # opt-in via captured lobby button templates
     afk_launch_game: bool = True  # ask Epic Launcher to open Fortnite on Start
     afk_pause_on_alt_tab: bool = True  # keep manual resume after focus loss
     afk_start_hotkey: str = "F7"  # editable global shortcuts
@@ -182,11 +191,14 @@ def load_templates(root: Path, language: str) -> list[Template]:
     out: list[Template] = []
     folder = Path(root) / language
     for p in sorted(folder.glob("*.png")):
-        role = p.stem.split("_", 1)[0].lower()
+        role = template_role(p.stem.lower())
         if role not in ROLES:
             continue
         img = imread_unicode(p)
         if img is not None and img.size:
+            # Uniform button captures can match almost any region at 100%.
+            if role in LOBBY_ROLES and float(np.std(img)) < 7.0:
+                continue
             out.append(Template(p.stem, role, img))
     return out
 
@@ -251,6 +263,16 @@ class Engine:
         self.pause_reason = ""  # "" | "manual" | "focus_lost"
         self._ever_foreground = False
         self._last_click = 0.0
+        self.lobby_state = "idle"
+        self.lobby_clicks = 0
+        self.lobby_last_button = ""
+        self._lobby_hud_hits = 0
+        self._lobby_candidate = ""
+        self._lobby_candidate_pos: tuple[int, int] | None = None
+        self._lobby_candidate_hits = 0
+        self._lobby_last_click_role = ""
+        self._lobby_last_click_at = 0.0
+        self._lobby_retry_count = 0
         self._in_match = False
         self._result_seen = False
         self._awaiting_replay = False
@@ -353,6 +375,16 @@ class Engine:
         self.replay_status = "idle"
         self._next_focus_attempt = 0.0
         self.focus_result = ""
+        self.lobby_state = "idle"
+        self.lobby_clicks = 0
+        self.lobby_last_button = ""
+        self._lobby_hud_hits = 0
+        self._lobby_candidate = ""
+        self._lobby_candidate_pos = None
+        self._lobby_candidate_hits = 0
+        self._lobby_last_click_role = ""
+        self._lobby_last_click_at = 0.0
+        self._lobby_retry_count = 0
         self._restart_pending = False
         self._thread = threading.Thread(target=self._loop, name="engine", daemon=True)
         self._thread.start()
@@ -784,6 +816,7 @@ class Engine:
         frame = self.io.grab()
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if templates else None
         best = reward_match = replay_match = death_match = None
+        lobby_matches: dict[str, tuple] = {}
         for tpl in templates:
             if self._stop.is_set() or epoch != self._screen_epoch:
                 break
@@ -791,7 +824,11 @@ class Engine:
                 gray, tpl.gray, scales,
                 lambda: self._stop.is_set() or epoch != self._screen_epoch)
             match = (score, pos, tpl)
-            if tpl.role == "reward":
+            if tpl.role in LOBBY_ROLES:
+                previous = lobby_matches.get(tpl.role)
+                if previous is None or score > previous[0]:
+                    lobby_matches[tpl.role] = match
+            elif tpl.role == "reward":
                 if reward_match is None or score > reward_match[0]:
                     reward_match = match
             elif tpl.role == "replay":
@@ -805,7 +842,7 @@ class Engine:
         yellow = yellow_replay_button(frame) if scan_yellow and not (
             replay_match and replay_match[0] >= self.cfg.threshold) and not (
                 self._stop.is_set() or epoch != self._screen_epoch) else None
-        return frame.shape, best, reward_match, replay_match, death_match, yellow
+        return frame.shape, best, reward_match, replay_match, death_match, yellow, lobby_matches
 
     def _read_screen_without_blocking_controls(self, templates: tuple[Template, ...],
                                                scan_yellow: bool) -> tuple | None:
@@ -851,6 +888,97 @@ class Engine:
         if job["error"] is not None:
             raise job["error"]
         return job["value"]
+
+    def _lobby_templates_active(self) -> bool:
+        return bool(self.cfg.lobby_autostart_enabled and
+                    any(tpl.role in LOBBY_BUTTON_ROLES for tpl in self.templates))
+
+    def _handle_lobby(self, matches: dict, now: float, best: tuple | None) -> bool:
+        """Screen-template lobby flow. True means do NOT run AFK this tick.
+
+        Unrecognized screens and loading states never imply an active match.
+        A separate user-captured HUD marker is necessary before AFK resumes.
+        """
+        if not self._lobby_templates_active():
+            return False
+        limit = max(.88, float(self.cfg.threshold))
+        hud = matches.get("match_hud")
+        hud_visible = bool(hud and hud[0] >= limit)
+        self._lobby_hud_hits = self._lobby_hud_hits + 1 if hud_visible else 0
+        if self._lobby_hud_hits >= 2:
+            if self.lobby_state != "in_match":
+                self.log("log.lobby_match_confirmed")
+                if not self._in_match:
+                    self.games += 1
+                    self.game_times.append(time.time())
+            self._in_match = True
+            self.lobby_state = "in_match"
+            self.wait_reason = ""
+            self._lobby_retry_count = 0
+            return False
+        # A single HUD frame is not enough to trust keyboard/mouse automation.
+        self._in_match = False
+        self._next_afk = now + 1.0
+        if best and best[0] >= self.cfg.threshold and best[2].role in ("wait", "result"):
+            self.state = "loading"
+            self.lobby_state = "loading"
+            self.wait_reason = "lobby_loading"
+            return True
+        chosen = None
+        # On overlapping lobby screens the final confirmation takes priority.
+        for role in ("lobby_confirm", "lobby_ready", "lobby_play"):
+            item = matches.get(role)
+            if item is not None and item[0] >= limit:
+                chosen = item
+                break
+        if chosen is None:
+            self._lobby_candidate = ""
+            self._lobby_candidate_pos = None
+            self._lobby_candidate_hits = 0
+            self.state = "lobby_wait"
+            self.lobby_state = "waiting_for_hud" if not any(
+                t.role == "match_hud" for t in self.templates) else "scanning"
+            self.wait_reason = "lobby_hud_required" if self.lobby_state == "waiting_for_hud" else "lobby_scanning"
+            return True
+        score, pos, tpl = chosen
+        stable = (tpl.role == self._lobby_candidate and
+                  self._lobby_candidate_pos is not None and
+                  abs(pos[0] - self._lobby_candidate_pos[0]) <= 25 and
+                  abs(pos[1] - self._lobby_candidate_pos[1]) <= 25)
+        self._lobby_candidate_hits = self._lobby_candidate_hits + 1 if stable else 1
+        self._lobby_candidate = tpl.role
+        self._lobby_candidate_pos = pos
+        self.lobby_state = tpl.role
+        self.state = "lobby_button"
+        self.wait_reason = "lobby_button"
+        if self._lobby_candidate_hits < 2:
+            return True
+        # Do not repeatedly press the same button on an unresponsive screen.
+        repeated = tpl.role == self._lobby_last_click_role
+        if repeated and self._lobby_retry_count >= 2:
+            self.state = "lobby_attention"
+            self.wait_reason = "lobby_attention"
+            self.lobby_state = "attention"
+            return True
+        cooldown = 8.0 if repeated else 2.0
+        if now - self._lobby_last_click_at < cooldown or now - self._last_click < self.cfg.click_delay:
+            return True
+        if self._stop.is_set() or self._paused.is_set() or not self.io.game_in_foreground():
+            self._pause_for_focus_loss()
+            return True
+        self.io.click(*pos)
+        self._last_click = now
+        self._lobby_last_click_at = now
+        self._lobby_retry_count = self._lobby_retry_count + 1 if repeated else 1
+        self._lobby_last_click_role = tpl.role
+        self.lobby_last_button = tpl.role
+        self.lobby_clicks += 1
+        self.lobby_state = "clicked_" + tpl.role
+        self.state = "lobby_loading"
+        self.wait_reason = "lobby_loading"
+        self._next_afk = now + 10.0
+        self.log("log.lobby_clicked", name=tpl.name, score=f"{score:.2f}")
+        return True
 
     def _tick(self) -> None:
         if self._stop.is_set() or self._paused.is_set():
@@ -906,12 +1034,17 @@ class Engine:
             # Keep AFK input alive when screenshot capture is slow, provided
             # Fortnite is STILL foreground. Never click an unverified frame.
             self.state = "capture_waiting"
-            self._run_afk_if_due(time.monotonic())
+            if self._lobby_templates_active():
+                self.wait_reason = "lobby_scanning"
+                self._next_afk = time.monotonic() + 1.0
+            else:
+                self._run_afk_if_due(time.monotonic())
             return
         if not self.io.game_in_foreground():
             self._pause_for_focus_loss()
             return  # discard screenshot from the old foreground session
-        frame_shape, best, reward_match, replay_match, death_match, yellow_found = analysis
+        frame_shape, best, reward_match, replay_match, death_match, yellow_found = analysis[:6]
+        lobby_matches = analysis[6] if len(analysis) > 6 else {}
         self.wait_reason = ""
         now = time.monotonic()
         # A saved replay template takes precedence; the yellow-button shape is
@@ -927,6 +1060,13 @@ class Engine:
                 replay_score, replay_position = found
                 replay_source = "yellow"
         death_visible = bool(death_match and death_match[0] >= cfg.threshold)
+        # The yellow Replay heuristic must never select a lobby Play button.
+        if (self._lobby_templates_active() and replay_source == "yellow" and
+                not death_visible and any(
+                    role in lobby_matches and lobby_matches[role][0] >= max(.88, cfg.threshold)
+                    for role in LOBBY_BUTTON_ROLES)):
+            replay_position = None
+            replay_source = ""
         self.score = max(0.0, replay_score, best[0] if best else 0.0)
 
         # After clicking replay, hold all anti-AFK inputs until we actually
@@ -1001,6 +1141,8 @@ class Engine:
                 return
 
         reward_visible = self._scan_reward(reward_match, now)
+        if self._handle_lobby(lobby_matches, now, best):
+            return
         if best and best[0] >= cfg.threshold and best[2].role == "wait":
             self.state = "loading"
             self._next_afk = now + self._afk_wait()
