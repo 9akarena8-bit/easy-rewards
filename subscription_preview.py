@@ -7,9 +7,9 @@ and verified payment integration, neither is included in this preview.
 
 PLANS = (
     {"id": "demo", "hours": None},
-    {"id": "day", "hours": 24},
-    {"id": "three_days", "hours": 72},
-    {"id": "week", "hours": 168},
+    {"id": "day", "hours": 24, "amount_kopeks": 5900},
+    {"id": "three_days", "hours": 72, "amount_kopeks": 12900},
+    {"id": "week", "hours": 168, "amount_kopeks": 24900},
 )
 
 
@@ -22,5 +22,5 @@ def snapshot():
         "remaining_seconds": None,
         "expiring_soon": False,
         "plans": [dict(plan) for plan in PLANS],
-        "payment_methods": ["card", "sbp"],
+        "payment_methods": ["bank_transfer", "steam_items"],
     }

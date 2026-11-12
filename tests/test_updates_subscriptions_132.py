@@ -35,7 +35,7 @@ def test_subscriptions_are_read_only_and_disabled(tmp_path):
     assert snapshot["payments_enabled"] is False
     assert snapshot["activation_enabled"] is False
     assert snapshot["remaining_seconds"] is None
-    assert snapshot["payment_methods"] == ["card", "sbp"]
+    assert snapshot["payment_methods"] == ["bank_transfer", "steam_items"]
     assert [p["id"] for p in snapshot["plans"]] == ["demo", "day", "three_days", "week"]
     assert [p["hours"] for p in snapshot["plans"]] == [None, 24, 72, 168]
     assert Backend(tmp_path, NoGame()).state()["subscription"] == snapshot

@@ -11,7 +11,6 @@ const goldSource = fs.readFileSync(path.join(__dirname, "..", "ui", "gold_ui.js"
 
 function createBrowser() {
   const events = {};
-  const nodes = {};
   let writes = 0, visiblePage = null, calls = 0;
   const nodes = {};
   const main = {
