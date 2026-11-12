@@ -105,6 +105,8 @@ def main() -> int:
             "F10": backend.pause,
             backend.cfg.afk_start_hotkey: backend.start,
             backend.cfg.afk_stop_hotkey: backend.stop,
+            backend.cfg.afk_pause_hotkey: backend.pause,
+            "F10": backend.pause,  # always-available resume fallback
             "F12": backend.stop,  # unconditional emergency Stop
         }
 
