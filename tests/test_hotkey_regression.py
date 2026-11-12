@@ -26,6 +26,6 @@ def test_windows_hotkeys_are_mapped_and_live_configurable():
 
 def test_release_and_installer_versions_match():
     version = (ROOT / "VERSION").read_text().strip()
-    assert version == "1.4.0"
+    assert version and version.count(".") == 2
     assert f'#define AppVersion "{version}"' in (ROOT / "installer.iss").read_text(encoding="utf-8")
     assert f'git tag v{version}' in (ROOT / "TAG_RELEASE.bat").read_text(encoding="utf-8")

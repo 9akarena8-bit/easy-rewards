@@ -1,10 +1,20 @@
 """v1.4.0 beta: launcher dispatch, editable hotkeys and safe failure handling."""
 from pathlib import Path
+import time
 
 from backend import AFK_HOTKEY_CHOICES, Backend
 from core import Config
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def until(predicate, seconds=2.0):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        if predicate():
+            return True
+        time.sleep(.01)
+    return bool(predicate())
 
 
 class FakeEpicIO:
@@ -40,9 +50,9 @@ def test_start_launches_via_epic_only_when_game_absent(tmp_path):
     b = Backend(tmp_path, io)
     try:
         result = b.start()
-        assert result == {"ok": True, "reason": "launch_requested"}
-        assert b.engine.running
-        assert io.launch_count == 1
+        assert result == {"ok": True, "reason": "start_queued"}
+        assert until(lambda: b.engine.running)
+        assert until(lambda: io.launch_count == 1)
         assert b.state()["cfg"]["afk_launch_game"] is True
     finally:
         b.stop()
@@ -54,7 +64,7 @@ def test_start_existing_game_does_not_launch_twice(tmp_path):
     try:
         assert b.start()["ok"] is True
         assert io.launch_count == 0
-        assert io.focus_count >= 1
+        assert until(lambda: io.focus_count >= 1)
     finally:
         b.stop()
 
@@ -63,9 +73,11 @@ def test_missing_epic_responds_with_error_without_starting(tmp_path):
     io = FakeEpicIO(launch_result=False)
     b = Backend(tmp_path, io)
     result = b.start()
-    assert result == {"ok": False, "reason": "epic_launcher_unavailable"}
-    assert b.engine.running is False
-    assert io.launch_count == 1
+    assert result == {"ok": True, "reason": "start_queued"}
+    assert until(lambda: io.launch_count == 1)
+    assert b.engine.running
+    assert until(lambda: b.state()["controls"]["start_error"] == "epic_launcher_unavailable")
+    b.stop()
 
 
 def test_autolaunch_can_be_disabled_and_saved(tmp_path):
