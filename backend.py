@@ -319,7 +319,10 @@ class Backend:
                          "start_phase": self._start_phase,
                          "start_error": self._start_error},
             "cfg": {k: getattr(self.cfg, k) for k in Config.__dataclass_fields__},
-            "engine": {"state": ("stopping" if e.stopping else "paused" if e.paused and e.running else e.state), "running": e.running, "paused": e.paused, "score": round(e.score, 3),
+            "engine": {"state": ("stopped" if not e.running and e.state == "stopping"
+                                 else "stopping" if e.stopping
+                                 else "paused" if e.paused and e.running else e.state),
+                       "running": e.running, "paused": e.paused, "score": round(e.score, 3),
                        "games": e.games, "cycles": e.cycles, "rewards": e.rewards, "runtime": int(e.runtime),
                        "history": self._history(),
                        "input_count": e.input_count, "last_input": e.last_input,
