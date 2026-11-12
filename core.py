@@ -77,8 +77,15 @@ class Config:
             for k, v in data.items():
                 if k in names:
                     setattr(cfg, k, v)
-        except (OSError, ValueError):
+        except (OSError, ValueError, TypeError, AttributeError):
             pass
+        # A damaged or hand-edited config must never crash the global hotkeys.
+        default_keys = ("F7", "F8", "F10")
+        keys = [getattr(cfg, k) for k in ("hotkey_start", "hotkey_stop", "hotkey_pause")]
+        reserved = {"F6", "F9"}
+        valid_keys = {f"F{i}" for i in range(1, 13)} - reserved
+        if any(not isinstance(k, str) or k not in valid_keys for k in keys) or len(set(keys)) != 3:
+            cfg.hotkey_start, cfg.hotkey_stop, cfg.hotkey_pause = default_keys
         return cfg
 
     def save(self, path: Path) -> None:
