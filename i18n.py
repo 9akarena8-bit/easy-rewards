@@ -950,3 +950,7 @@ STRINGS["uk"]["log.afk_focus_paused"] = "Alt+Tab: анти-AFK призупин�
 STRINGS["ru"]["afk.reason_focus_lost"] = "Alt+Tab: анти-AFK на паузе до ручного продолжения (F10)."
 STRINGS["en"]["afk.reason_focus_lost"] = "Alt+Tab: anti-AFK remains paused until manually resumed (F10)."
 STRINGS["uk"]["afk.reason_focus_lost"] = "Alt+Tab: анти-AFK на паузі до ручного продовження (F10)."
+
+STRINGS["ru"]["afk.reason_focus_lost"] = "Alt+Tab: анти-AFK на паузе. Для продолжения вернись в игру и нажми клавишу паузы (резерв F10)."
+STRINGS["en"]["afk.reason_focus_lost"] = "Alt+Tab: anti-AFK paused. Return to Fortnite and press the chosen Pause key (F10 backup)."
+STRINGS["uk"]["afk.reason_focus_lost"] = "Alt+Tab: анти-AFK призупинено. Повернися у гру й натисни клавішу паузи (резерв F10)."
