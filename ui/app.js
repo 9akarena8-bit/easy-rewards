@@ -136,6 +136,8 @@ async function runControlAction(action, target = "fortnite") {
       toast(action === "focusgame" ? t("afk.focus_ok")
         : result?.reason === "launch_requested"
           ? controlUi("Fortnite запускается через Epic. Ожидание окна игры…", "Fortnite launch requested via Epic. Waiting for game window…", "Fortnite запускається через Epic. Очікування вікна гри…")
+        : result?.reason === "start_queued"
+          ? controlUi("Запуск принят. Состояние появится в диагностике.", "Start queued. Check diagnostics for progress.", "Запуск прийнято. Перевірте стан у діагностиці.")
           : controlUi("Python получил команду: ", "Python acknowledged: ", "Python отримав команду: ") + name);
     }
   } catch (err) {

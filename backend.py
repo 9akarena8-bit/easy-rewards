@@ -107,6 +107,11 @@ class Backend:
         self._control_sequence = 0
         self._control_action = "none"
         self._control_time = ""
+        self._start_guard = threading.Lock()
+        self._start_serial = 0
+        self._start_pending = False
+        self._start_phase = "idle"
+        self._start_error = ""
         self.reward_stats = RewardStats(self.base / "rewards.json")
         self.payment_drafts = payment_hub.LocalInterestDrafts(self.base / "payment_interest_drafts.json")
         # Opt-in integration preview only; unset in production until the
@@ -298,7 +303,10 @@ class Backend:
             "discord_notifications": self.discord.status(),
             "controls": {"last": self._control_action,
                          "time": self._control_time,
-                         "sequence": self._control_sequence},
+                         "sequence": self._control_sequence,
+                         "start_pending": self._start_pending,
+                         "start_phase": self._start_phase,
+                         "start_error": self._start_error},
             "cfg": {k: getattr(self.cfg, k) for k in Config.__dataclass_fields__},
             "engine": {"state": ("stopping" if e.stopping else "paused" if e.paused and e.running else e.state), "running": e.running, "paused": e.paused, "score": round(e.score, 3),
                        "games": e.games, "cycles": e.cycles, "rewards": e.rewards, "runtime": int(e.runtime),
@@ -338,10 +346,10 @@ class Backend:
 
     # ------------------------------------------------------------ engine controls
     def start(self) -> dict:
-        """Start the engine; optionally request Fortnite launch via Epic protocol.
+        """Return promptly: the v1.4.0 report shows a command before any engine log.
 
-        Dispatching a URI is not proof that the game has started. The engine
-        waits for a verified foreground Fortnite window before sending input.
+        Windows game discovery/focus and template initialization must never hold
+        the pywebview start call, otherwise the UI times out after five seconds.
         """
         self._control_received("start")
         if self.engine.running:
@@ -350,26 +358,74 @@ class Backend:
             if was_paused and not resumed:
                 return {"ok": False, "reason": "return_to_game"}
             return {"ok": True, "reason": "resumed" if was_paused else "already_running"}
-        if self.cfg.afk_launch_game and not getattr(self.io, "game_window_found", lambda: False)():
-            launcher = getattr(self.io, "launch_game", None)
-            if callable(launcher):
-                try:
-                    if not launcher():
-                        return {"ok": False, "reason": "epic_launcher_unavailable"}
-                except (OSError, ValueError) as exc:
-                    return {"ok": False, "reason": "epic_launch_error", "detail": str(exc)[:180]}
-                self.engine.start()
-                return {"ok": True, "reason": "launch_requested"}
-        # Focus the already-running game BEFORE starting the worker. This
-        # removes a race where a quick Alt+Tab occurs after window activation
-        # but before the engine has seen Fortnite once.
-        if self.cfg.auto_focus and getattr(self.io, "game_window_found", lambda: False)():
-            try:
+        with self._start_guard:
+            if self._start_pending:
+                return {"ok": True, "reason": "start_queued"}
+            self._start_serial += 1
+            generation = self._start_serial
+            self._start_pending = True
+            self._start_phase = "queued"
+            self._start_error = ""
+        threading.Thread(target=self._start_in_background, args=(generation,),
+                         name="engine-launch", daemon=True).start()
+        return {"ok": True, "reason": "start_queued"}
+
+    def _start_in_background(self, generation: int) -> None:
+        """Start the engine before requesting a normal Windows/Epic focus change."""
+        try:
+            with self._start_guard:
+                if generation != self._start_serial:
+                    return
+                self._start_phase = "initializing_engine"
+            self.engine.start()
+            with self._start_guard:
+                cancelled = generation != self._start_serial
+            if cancelled:
+                self.engine.stop()
+                return
+            if not self.engine.running:
+                with self._start_guard:
+                    self._start_phase = "not_started"
+                    self._start_error = "engine_disabled_or_not_started"
+                return
+            with self._start_guard:
+                self._start_phase = "waiting_for_fortnite"
+            threading.Thread(target=self._activate_game_after_start,
+                             args=(generation,), name="game-activation",
+                             daemon=True).start()
+        except Exception as exc:
+            with self._start_guard:
+                if generation == self._start_serial:
+                    self._start_phase = "start_failed"
+                    self._start_error = type(exc).__name__ + ": " + str(exc)[:180]
+            self.log("log.error", err="start: " + type(exc).__name__)
+        finally:
+            with self._start_guard:
+                self._start_pending = False
+
+    def _activate_game_after_start(self, generation: int) -> None:
+        """Optional OS focus/launcher request cannot block Python API or start."""
+        try:
+            found = bool(getattr(self.io, "game_window_found", lambda: False)())
+            with self._start_guard:
+                if generation != self._start_serial or not self.engine.running:
+                    return
+            if found and self.cfg.auto_focus:
                 self.io.focus_game()
-            except (OSError, RuntimeError):
-                pass
-        self.engine.start()
-        return {"ok": True, "reason": "started"}
+            elif not found and self.cfg.afk_launch_game:
+                launch = getattr(self.io, "launch_game", None)
+                if callable(launch) and not launch():
+                    with self._start_guard:
+                        if generation == self._start_serial:
+                            self._start_error = "epic_launcher_unavailable"
+        except Exception as exc:
+            with self._start_guard:
+                if generation == self._start_serial:
+                    self._start_error = "window_activation: " + type(exc).__name__
+        finally:
+            with self._start_guard:
+                if generation == self._start_serial and self.engine.running:
+                    self._start_phase = "engine_running"
 
     def input_probe_delayed(self, target: str = "fortnite") -> dict:
         """Schedule a test while the user switches to the target window."""
@@ -391,6 +447,9 @@ class Backend:
 
     def stop(self) -> None:
         self._control_received("stop")
+        with self._start_guard:
+            self._start_serial += 1
+            self._start_phase = "cancelled"
         self.engine.stop()
 
     def pause(self) -> dict:
