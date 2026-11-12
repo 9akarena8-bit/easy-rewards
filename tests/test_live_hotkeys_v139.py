@@ -100,3 +100,16 @@ def test_approved_skin_is_loaded_and_checkout_remains_demo():
     catalog = payment_hub.catalog()
     assert catalog["active"] is False
     assert catalog["automatic_activation"] is False
+
+def test_corrupted_hotkeys_recover_safe_defaults(tmp_path):
+    import json
+    config = tmp_path / "config.json"
+    for corrupted in (
+        {"hotkey_start": "F7", "hotkey_stop": "F7", "hotkey_pause": "F10"},
+        {"hotkey_start": "F6", "hotkey_stop": "F8", "hotkey_pause": "F10"},
+        {"hotkey_start": None, "hotkey_stop": "F8", "hotkey_pause": "F10"},
+        {"hotkey_start": "F18", "hotkey_stop": "F8", "hotkey_pause": "F10"},
+    ):
+        config.write_text(json.dumps(corrupted), encoding="utf-8")
+        c = Config.load(config)
+        assert (c.hotkey_start, c.hotkey_stop, c.hotkey_pause) == ("F7", "F8", "F10")
