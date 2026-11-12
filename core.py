@@ -267,6 +267,7 @@ class Engine:
         self.lobby_clicks = 0
         self.lobby_last_button = ""
         self._lobby_hud_hits = 0
+        self._lobby_hud_misses = 0
         self._lobby_candidate = ""
         self._lobby_candidate_pos: tuple[int, int] | None = None
         self._lobby_candidate_hits = 0
@@ -379,6 +380,7 @@ class Engine:
         self.lobby_clicks = 0
         self.lobby_last_button = ""
         self._lobby_hud_hits = 0
+        self._lobby_hud_misses = 0
         self._lobby_candidate = ""
         self._lobby_candidate_pos = None
         self._lobby_candidate_hits = 0
@@ -905,6 +907,7 @@ class Engine:
         hud = matches.get("match_hud")
         hud_visible = bool(hud and hud[0] >= limit)
         self._lobby_hud_hits = self._lobby_hud_hits + 1 if hud_visible else 0
+        self._lobby_hud_misses = 0 if hud_visible else self._lobby_hud_misses + 1
         if self._lobby_hud_hits >= 2:
             if self.lobby_state != "in_match":
                 self.log("log.lobby_match_confirmed")
@@ -917,7 +920,9 @@ class Engine:
             self._lobby_retry_count = 0
             return False
         # A single HUD frame is not enough to trust keyboard/mouse automation.
-        self._in_match = False
+        # One dropped frame must not count as another match after recovery.
+        if self._lobby_hud_misses >= 3:
+            self._in_match = False
         self._next_afk = now + 1.0
         if best and best[0] >= self.cfg.threshold and best[2].role in ("wait", "result"):
             self.state = "loading"
