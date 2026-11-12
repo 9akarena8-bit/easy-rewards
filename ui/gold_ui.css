@@ -146,3 +146,18 @@ body:not(.mini) .gold-rail-bottom{flex:0 0 auto}
 /* Stable interface: avoid restarting decorative animations when status changes. */
 body:not(.mini) .gold-chest,body:not(.mini) .gold-token{animation:none!important}
 .gold-nav .nav i{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:22px}
+
+/* Beta v1.4 — quiet, translucent gold controls; approved F-token logo untouched. */
+body:not(.mini) .card{border-radius:12px;background:rgba(22,23,22,.78);backdrop-filter:blur(9px);border-color:rgba(232,179,81,.18)}
+body:not(.mini) .gold-hero{border-radius:14px}
+body:not(.mini) .gold-news-item,body:not(.mini) .gold-stat{border-radius:9px}
+body:not(.mini) .gold-nav .nav{border-radius:8px}
+body:not(.mini) .gold-rail-bottom{margin-top:auto}
+.hotkey-picker{width:120px;min-width:105px;text-align:center;border-color:rgba(240,195,106,.4)!important;color:var(--acc)!important;font-weight:800}
+.hotkey-help{font-size:11px;line-height:1.5;max-width:480px}
+@media (prefers-reduced-transparency:reduce){body:not(.mini) .card{backdrop-filter:none}}
+
+/* Alt+Tab pause without rebuilding the interface during polling. */
+.afk-pause-banner{margin:10px 0 15px;padding:12px 14px;border:1px solid rgba(240,186,72,.35);border-left:3px solid var(--acc);border-radius:9px;background:rgba(235,168,63,.075);color:var(--ink);font-size:12px;line-height:1.5}
+.afk-pause-banner[hidden]{display:none!important}
+.gold-pause-banner{margin:11px 20px 0 0;max-width:510px}

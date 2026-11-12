@@ -6,6 +6,8 @@ through an `IO` object (see winio.py), which makes the engine testable.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import random
 import threading
 import time
@@ -43,6 +45,11 @@ class Config:
     require_foreground: bool = True  # only act while the game window is active
     auto_focus: bool = True          # try to bring the game window to front
     afk_enabled: bool = True
+    afk_launch_game: bool = True  # ask Epic Launcher to open Fortnite on Start
+    afk_pause_on_alt_tab: bool = True  # keep manual resume after focus loss
+    afk_start_hotkey: str = "F7"  # editable global shortcuts
+    afk_stop_hotkey: str = "F8"
+    afk_pause_hotkey: str = "F10"  # F10 remains an always-available backup
     afk_extra_enabled: bool = False  # opt in to jumps/clicks/item swaps
     afk_interval: float = 6.0       # seconds between anti-AFK presses
     afk_hold: float = 3.0           # max seconds a key is held
@@ -65,19 +72,94 @@ class Config:
 
     @classmethod
     def load(cls, path: Path) -> "Config":
+        """Validate persisted config, preserving compatible older beta settings."""
         cfg = cls()
         try:
-            data = json.loads(Path(path).read_text(encoding="utf-8"))
-            names = {f.name for f in fields(cls)}
-            for k, v in data.items():
-                if k in names:
-                    setattr(cfg, k, v)
-        except (OSError, ValueError):
-            pass
+            data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError, UnicodeError, TypeError):
+            return cfg
+        if not isinstance(data, dict):
+            return cfg
+        for old, new in {"hotkey_start": "afk_start_hotkey",
+                         "hotkey_stop": "afk_stop_hotkey",
+                         "hotkey_pause": "afk_pause_hotkey",
+                         "auto_launch_game": "afk_launch_game"}.items():
+            if old in data and new not in data:
+                data[new] = data[old]
+        numbers = {
+            "threshold": (0.30, 0.99),
+            "scan_interval": (0.1, 5.0),
+            "click_delay": (0.0, 30.0),
+            "afk_interval": (1.0, 120.0),
+            "afk_hold": (0.1, 10.0),
+            "afk_pause_min": (0.2, 10.0),
+            "afk_pause_max": (0.2, 10.0),
+            "afk_camera_pixels_360": (100.0, 12000.0),
+        }
+        languages = {"ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr",
+                     "it", "ja", "ko", "zh", "ar"}
+        allowed_keys = {f"F{i}" for i in range(1, 13)}
+        for entry in fields(cls):
+            name = entry.name
+            if name not in data:
+                continue
+            value = data[name]
+            default = getattr(cfg, name)
+            if name in numbers:
+                low, high = numbers[name]
+                if type(value) not in (int, float) or not low <= value <= high:
+                    continue
+                value = float(value)
+            elif isinstance(default, bool):
+                if type(value) is not bool:
+                    continue
+            elif name == "scales":
+                if (not isinstance(value, list) or not 1 <= len(value) <= 8
+                        or any(type(v) not in (int, float) or not 0.5 <= v <= 2.0 for v in value)):
+                    continue
+                value = [float(v) for v in value]
+            elif name == "afk_keys":
+                if (not isinstance(value, str) or not value or len(value) > 4
+                        or any(k not in "wasd" for k in value)):
+                    continue
+            elif name in ("language", "ui_language"):
+                if not isinstance(value, str) or value not in (languages if name == "language" else {"ru", "en", "uk"}):
+                    continue
+            elif name == "theme":
+                if value not in ("dark", "light"):
+                    continue
+            elif name == "update_url":
+                if not isinstance(value, str) or len(value) > 2048 or (value and not value.startswith("https://")):
+                    continue
+            elif name in ("afk_start_hotkey", "afk_stop_hotkey", "afk_pause_hotkey"):
+                if not isinstance(value, str) or value not in allowed_keys:
+                    continue
+            elif type(value) is not type(default):
+                continue
+            setattr(cfg, name, value)
+        if cfg.afk_pause_min > cfg.afk_pause_max:
+            cfg.afk_pause_min, cfg.afk_pause_max = cls().afk_pause_min, cls().afk_pause_max
+        # Backend checks collisions and preserves a valid Stop binding,
+        # including F12 emergency stop. Config.load only validates input types.
         return cfg
 
     def save(self, path: Path) -> None:
-        Path(path).write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
+        """Replace configuration atomically so interruptions do not truncate it."""
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                    "w", encoding="utf-8", dir=target.parent,
+                    prefix=".cfg-", suffix=".tmp", delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump(asdict(self), stream, indent=2)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, target)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 # ------------------------------------------------------------- templates
@@ -166,6 +248,8 @@ class Engine:
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._paused = threading.Event()
+        self.pause_reason = ""  # "" | "manual" | "focus_lost"
+        self._ever_foreground = False
         self._last_click = 0.0
         self._in_match = False
         self._result_seen = False
@@ -235,8 +319,8 @@ class Engine:
                 self._restart_pending = True
                 self.log("log.restart_queued")
             elif self.paused:
-                self.toggle_pause()
-            return
+                return self.toggle_pause()
+            return True
         n = self.reload_templates()
         # Anti-AFK mode must be runnable on a fresh install, even before
         # any screen templates have been captured.
@@ -249,6 +333,8 @@ class Engine:
         self._screen_epoch += 1
         self._stop.clear()
         self._paused.clear()
+        self.pause_reason = ""
+        self._ever_foreground = bool(self.io.game_in_foreground())
         self._tick_mark = time.monotonic()
         self._next_afk = time.monotonic() + min(0.7, self._afk_wait())
         self.state = "starting"
@@ -270,6 +356,7 @@ class Engine:
         self._restart_pending = False
         self._thread = threading.Thread(target=self._loop, name="engine", daemon=True)
         self._thread.start()
+        return True
 
     def stop(self) -> None:
         """Request a stop immediately; long template recognition must not freeze UI.
@@ -292,19 +379,50 @@ class Engine:
         thread.join(timeout=0.35)
         # _loop's finally clause marks the engine stopped and logs exactly once.
 
-    def toggle_pause(self) -> None:
-        if not self.running or self._stop.is_set():
+    def _pause_for_focus_loss(self) -> None:
+        """Latch a focus-loss pause without stopping the worker.
+
+        An in-flight input sees the paused event via should_abort and WinIO
+        releases held keys in finally. Invalidate any in-flight screenshot.
+        """
+        if not self.cfg.afk_pause_on_alt_tab or not self._ever_foreground:
             return
-        self._screen_epoch += 1  # Never reuse a pre-pause screenshot after resuming.
+        if self._stop.is_set() or self._paused.is_set():
+            return
+        self._screen_epoch += 1
+        self._run_seconds += max(0., time.monotonic() - self._tick_mark)
+        self.pause_reason = "focus_lost"
+        self.wait_reason = "focus_lost"
+        self._paused.set()
+        self.state = "paused"
+        self.log("log.afk_focus_paused")
+
+    def toggle_pause(self) -> bool:
+        """Manual Pause/Resume also used by F10 while Fortnite is foreground."""
+        if not self.running or self._stop.is_set():
+            return False
         if self.paused:
+            if not self.io.game_in_foreground():
+                self.wait_reason = "not_foreground"
+                return False
+            self._screen_epoch += 1
             self._tick_mark = time.monotonic()
+            self._next_afk = self._tick_mark + max(.35, self._afk_wait())
+            self._ever_foreground = True
+            self.wait_reason = ""
+            self.pause_reason = ""
+            self.state = "starting"
             self._paused.clear()
             self.log("log.resumed")
-        else:
-            self._run_seconds += time.monotonic() - self._tick_mark
-            self._paused.set()
-            self.state = "paused"
-            self.log("log.paused")
+            return True
+        self._screen_epoch += 1
+        self._run_seconds += max(0., time.monotonic() - self._tick_mark)
+        self._paused.set()
+        self.pause_reason = "manual"
+        self.wait_reason = ""
+        self.state = "paused"
+        self.log("log.paused")
+        return True
 
     def input_probe(self, target: str = "fortnite") -> dict:
         """Deliberate, bounded diagnostic. Never sends to an unexpected app.
@@ -479,9 +597,17 @@ class Engine:
             elif action == "sprint_jump":
                 keys("w", "shift", "space"); label = "W+SHIFT+SPACE"
             elif action == "slide":
-                keys("w", "shift", "ctrl"); label = "W+SHIFT+CTRL"
+                if hasattr(self.io, "slide_sequence"):
+                    self.io.slide_sequence(hold, False, should_abort)
+                else:
+                    keys("w", "shift", "ctrl")
+                label = "SPRINT → SLIDE"
             elif action == "slide_jump":
-                keys("w", "shift", "ctrl", "space"); label = "W+SHIFT+CTRL+SPACE"
+                if hasattr(self.io, "slide_sequence"):
+                    self.io.slide_sequence(hold, True, should_abort)
+                else:
+                    keys("w", "shift", "ctrl", "space")
+                label = "SPRINT → SLIDE → JUMP"
             elif action == "yaw":
                 angle = random.randint(25, 360)
                 direction = random.choice((-1, 1))
@@ -567,9 +693,12 @@ class Engine:
         if not cfg.afk_enabled or now < self._next_afk:
             return
         def abort() -> bool:
-            return (self._stop.is_set() or self._paused.is_set() or
-                    ((cfg.require_foreground or cfg.afk_sequence_enabled) and
-                     not self.io.game_in_foreground()))
+            if self._stop.is_set() or self._paused.is_set():
+                return True
+            if not self.io.game_in_foreground():
+                self._pause_for_focus_loss()
+                return True
+            return False
         if cfg.afk_sequence_enabled:
             self._smart_afk_action(abort)
         else:
@@ -590,7 +719,18 @@ class Engine:
                     self.last_input_error = repr(exc)
                     self.log("log.error", err=repr(exc))
                     self._stop.wait(1.0)
-                self._stop.wait(max(0.0, self.cfg.scan_interval - (time.monotonic() - t0)))
+                # Check foreground during the scan interval too. Otherwise
+                # Alt+Tab during a long user-configured interval may go
+                # unnoticed until the next expensive screenshot pass.
+                remaining = max(0., self.cfg.scan_interval - (time.monotonic() - t0))
+                while remaining > 0 and not self._stop.is_set() and not self._paused.is_set():
+                    if self._ever_foreground and not self.io.game_in_foreground():
+                        self._pause_for_focus_loss()
+                        if self._paused.is_set():
+                            break
+                    step = min(.05, remaining)
+                    self._stop.wait(step)
+                    remaining -= step
         finally:
             if not self._paused.is_set():
                 self._run_seconds += time.monotonic() - self._tick_mark
@@ -716,14 +856,22 @@ class Engine:
         if self._stop.is_set() or self._paused.is_set():
             return
         cfg = self.cfg
-        foreground_required = cfg.require_foreground or cfg.afk_sequence_enabled
-        if foreground_required and not self.io.game_in_foreground():
+        # NEVER send automation input to a non-Fortnite window, regardless
+        # of legacy require_foreground settings.
+        foreground_required = True
+        if not self.io.game_in_foreground():
+            if self._ever_foreground:
+                self._pause_for_focus_loss()
+                if self.paused:
+                    return
             now = time.monotonic()
-            # Do not constantly steal focus while the user is in the launcher.
-            if cfg.auto_focus and now >= self._next_focus_attempt and not self._stop.is_set():
+            # Focus may be requested during initial startup only. Once the
+            # user has been in Fortnite, Alt+Tab must not steal focus back.
+            if (not self._ever_foreground and cfg.auto_focus and
+                    now >= self._next_focus_attempt and not self._stop.is_set()):
                 self._next_focus_attempt = now + 7.0
                 try:
-                    result = self.io.focus_game()
+                    self.io.focus_game()
                     self.focus_result = "focused" if self.io.game_in_foreground() else "denied"
                 except Exception as exc:
                     self.focus_result = "error: " + str(exc)
@@ -734,6 +882,7 @@ class Engine:
                 self.state = "waiting_window"
                 self.score = 0.0
                 return
+        self._ever_foreground = True
         self.wait_reason = ""
         has_templates = bool(self.templates)
         scan_yellow = bool(cfg.afk_enabled and cfg.afk_replay_auto_detect)
@@ -759,6 +908,9 @@ class Engine:
             self.state = "capture_waiting"
             self._run_afk_if_due(time.monotonic())
             return
+        if not self.io.game_in_foreground():
+            self._pause_for_focus_loss()
+            return  # discard screenshot from the old foreground session
         frame_shape, best, reward_match, replay_match, death_match, yellow_found = analysis
         self.wait_reason = ""
         now = time.monotonic()
@@ -855,7 +1007,8 @@ class Engine:
             return
         if best and best[0] >= cfg.threshold:
             if foreground_required and not self.io.game_in_foreground():
-                self.state = "waiting_window"
+                self._pause_for_focus_loss()
+                self.state = "paused" if self.paused else "waiting_window"
                 return
             if now - self._last_click < cfg.click_delay:
                 self.state = "button_waiting"

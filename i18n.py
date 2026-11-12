@@ -941,3 +941,16 @@ STRINGS["uk"].update({
     "payments.draft_warning": "Це не рахунок і не замовлення продавцю. Нічого не надіслано, доступ не видано.",
     "payments.security": "Доступ надається лише після незалежної перевірки оплати чи обміну на сервері.",
 })
+
+# v1.4.0 — foreground-loss pause (all shipped UI languages).
+STRINGS["ru"]["log.afk_focus_paused"] = "Alt+Tab: анти-AFK приостановлен. Вернись в Fortnite и нажми F10."
+STRINGS["en"]["log.afk_focus_paused"] = "Alt+Tab: anti-AFK paused. Return to Fortnite and press F10."
+STRINGS["uk"]["log.afk_focus_paused"] = "Alt+Tab: анти-AFK призупинено. Повернися у Fortnite та натисни F10."
+
+STRINGS["ru"]["afk.reason_focus_lost"] = "Alt+Tab: анти-AFK на паузе до ручного продолжения (F10)."
+STRINGS["en"]["afk.reason_focus_lost"] = "Alt+Tab: anti-AFK remains paused until manually resumed (F10)."
+STRINGS["uk"]["afk.reason_focus_lost"] = "Alt+Tab: анти-AFK на паузі до ручного продовження (F10)."
+
+STRINGS["ru"]["afk.reason_focus_lost"] = "Alt+Tab: анти-AFK на паузе. Для продолжения вернись в игру и нажми клавишу паузы (резерв F10)."
+STRINGS["en"]["afk.reason_focus_lost"] = "Alt+Tab: anti-AFK paused. Return to Fortnite and press the chosen Pause key (F10 backup)."
+STRINGS["uk"]["afk.reason_focus_lost"] = "Alt+Tab: анти-AFK призупинено. Повернися у гру й натисни клавішу паузи (резерв F10)."

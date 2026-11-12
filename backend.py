@@ -7,6 +7,7 @@ the screen/keyboard layer (`io`) is injected.
 from __future__ import annotations
 
 import base64
+import os
 import sys
 import collections
 import threading
@@ -21,6 +22,7 @@ import treasure
 import release_updater
 import subscription_preview
 import payment_hub
+from merchant_service.license_client import LicenseClient
 import support_report
 import discord_notifications
 import webbrowser
@@ -39,7 +41,10 @@ NUM_LIMITS = {          # key: (type, lo, hi)
     "afk_pause_max": (float, 0.2, 10.0),
     "afk_camera_pixels_360": (float, 100.0, 12000.0),
 }
-BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
+# Reserve F6 input test, F9 counter and F10 pause. Distinct Start/Stop keys.
+AFK_HOTKEY_CHOICES = tuple(f"F{i}" for i in range(1, 13) if i not in (6, 9, 10))
+AFK_PAUSE_HOTKEY_CHOICES = ("F10",) + tuple(k for k in AFK_HOTKEY_CHOICES if k != "F12")
+BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "afk_launch_game", "afk_pause_on_alt_tab", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
          "afk_slide_enabled", "afk_camera_enabled", "afk_slot_enabled", "afk_pickaxe_enabled",
          "afk_grenade_enabled", "afk_weapon_enabled", "afk_replay_auto_detect")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
@@ -70,7 +75,7 @@ class Backend:
         "tracker_reset", "update_check", "update_prepare", "update_install", "open_mini", "close_mini",
         "input_probe_delayed", "create_support_report", "open_support",
         "discord_configure", "discord_test", "discord_clear",
-        "payment_interest_create",
+        "payment_interest_create", "license_activate", "license_check",
     )
 
     def __init__(self, base, io, hooks: Hooks | None = None):
@@ -80,6 +85,20 @@ class Backend:
         self.cfg_path = self.base / "config.json"
         self.templates_root = self.base / "templates"
         self.cfg = Config.load(self.cfg_path)
+        # Never let a malformed/old config disable emergency Stop or bind
+        # reserved F12 as Start. Settings can also be edited outside the UI.
+        start_key = str(self.cfg.afk_start_hotkey).upper()
+        stop_key = str(self.cfg.afk_stop_hotkey).upper()
+        if start_key not in AFK_HOTKEY_CHOICES or start_key == "F12":
+            start_key = "F7"
+        if stop_key not in AFK_HOTKEY_CHOICES or stop_key == start_key:
+            stop_key = "F8" if start_key != "F8" else "F12"
+        pause_key = str(self.cfg.afk_pause_hotkey).upper()
+        if pause_key not in AFK_PAUSE_HOTKEY_CHOICES or pause_key in (start_key, stop_key):
+            pause_key = "F10"
+        self.cfg.afk_start_hotkey = start_key
+        self.cfg.afk_stop_hotkey = stop_key
+        self.cfg.afk_pause_hotkey = pause_key
         self.tracker = Tracker(self.base / "tracker.json")
         self._log: collections.deque = collections.deque(maxlen=80)
         self._log_n = 0
@@ -90,6 +109,21 @@ class Backend:
         self._control_time = ""
         self.reward_stats = RewardStats(self.base / "rewards.json")
         self.payment_drafts = payment_hub.LocalInterestDrafts(self.base / "payment_interest_drafts.json")
+        # Opt-in integration preview only; unset in production until the
+        # actual licensing policy and payment processors have been approved.
+        license_url = os.environ.get("FPT_LICENSE_SERVER_URL", "").strip()
+        self.license_client = None
+        self._license_status = {"configured": False, "ok": False,
+                                "error": "server_not_configured"}
+        self._license_lock = threading.RLock()
+        if license_url:
+            try:
+                self.license_client = LicenseClient(license_url)
+                self._license_status = {"configured": True, "ok": False,
+                                        "error": "not_checked"}
+            except ValueError:
+                self._license_status = {"configured": False, "ok": False,
+                                        "error": "invalid_https_server"}
         self.engine = Engine(self.cfg, io, self.templates_root, log=self.log,
                              on_reward=self.reward_stats.increment)
         self._shot: np.ndarray | None = None
@@ -101,8 +135,16 @@ class Backend:
         self._release_news: list[dict] = []
         self._update_lock = threading.RLock()
         self._lock = threading.Lock()
+        self._config_save_lock = threading.Lock()
         self.restart_requested = False
         self.version = updater.local_version(self.base)
+        self._bundled_news = [{"version": "1.4.0-beta",
+            "title": "Fortnite Pirate Token v1.4.0 Beta — сборка для тестирования",
+            "notes": ("Новый пиратский дизайн; Alt+Tab ставит Anti-AFK на паузу и требует продолжения, "
+                      "настраиваемые горячие клавиши, запуск через Epic Launcher и улучшенный подкат. "
+                      "Telegram Stars, карты, СБП, QR, перевод и скины — демо, без реальной оплаты. "
+                      "Работа в Fortnite требует проверки на Windows.")}] if self.version == "1.4.0" else []
+        self._release_news = list(self._bundled_news)
 
     # ------------------------------------------------------------ plumbing
     def log(self, key: str, /, **kw) -> None:
@@ -132,6 +174,46 @@ class Backend:
         """Save a local, non-payable request. NEVER accept payment or grant access."""
         return self.payment_drafts.create(plan, method, game, skin_selection)
 
+    def license_activate(self, key: str) -> dict:
+        """Explicit, opt-in activation. The launcher never processes a payment."""
+        if self.license_client is None:
+            return {"ok": False, "error": "server_not_configured"}
+        if not isinstance(key, str) or len(key.strip()) > 120 or not key.strip():
+            return {"ok": False, "error": "invalid_key"}
+        with self._license_lock:
+            try:
+                result = self.license_client.activate(key)
+                self._license_status = self._license_public_status(result)
+                return dict(self._license_status)
+            except (OSError, ValueError):
+                self._license_status = {"configured": True, "ok": False, "error": "server_unavailable"}
+                return dict(self._license_status)
+
+    def license_check(self) -> dict:
+        """Check a previously activated key without exposing it to frontend state."""
+        if self.license_client is None:
+            return {"ok": False, "error": "server_not_configured"}
+        with self._license_lock:
+            try:
+                result = self.license_client.check()
+                self._license_status = self._license_public_status(result)
+                return dict(self._license_status)
+            except (OSError, ValueError):
+                self._license_status = {"configured": True, "ok": False, "error": "server_unavailable"}
+                return dict(self._license_status)
+
+    @staticmethod
+    def _license_public_status(result: dict) -> dict:
+        if not isinstance(result, dict):
+            return {"configured": True, "ok": False, "error": "bad_response"}
+        return {"configured": True,
+                "ok": result.get("ok") is True,
+                "error": str(result.get("error", ""))[:70] if result.get("ok") is not True else "",
+                "expires_at": result.get("expires_at") if type(result.get("expires_at")) is int else None,
+                "seconds_left": max(0, result["seconds_left"]) if type(result.get("seconds_left")) is int else None,
+                # A valid server response is NOT proof paid features are enforced.
+                "enforcement_enabled": False}
+
     def create_support_report(self) -> dict:
         """User-triggered local diagnostic file. Never auto-upload or leak secrets."""
         try:
@@ -160,7 +242,8 @@ class Backend:
         return {**STRINGS["en"], **STRINGS.get(lang, {})}
 
     def _save_cfg(self) -> None:
-        self.cfg.save(self.cfg_path)
+        with self._config_save_lock:
+            self.cfg.save(self.cfg_path)
 
     def shutdown(self) -> None:
         self.engine.stop()
@@ -222,7 +305,7 @@ class Backend:
                        "history": self._history(),
                        "input_count": e.input_count, "last_input": e.last_input,
                        "input_error": e.last_input_error,
-                       "wait_reason": e.wait_reason,
+                       "wait_reason": e.wait_reason, "pause_reason": e.pause_reason,
                        "probe_status": e.probe_status, "probe_detail": e.probe_detail,
                        "probe_at": e.probe_at, "probe_target": e.probe_target,
                        "replay_count": e.replay_count, "replay_status": e.replay_status,
@@ -247,15 +330,46 @@ class Backend:
             "update": dict(self._upd),
             "release_news": list(self._release_news),
             "subscription": subscription_preview.snapshot(),
+            "license_status": dict(self._license_status),
             "payment_hub": {**payment_hub.catalog(),
                             "drafts": self.payment_drafts.recent()},
             "treasure": trs,
         }
 
     # ------------------------------------------------------------ engine controls
-    def start(self) -> None:
+    def start(self) -> dict:
+        """Start the engine; optionally request Fortnite launch via Epic protocol.
+
+        Dispatching a URI is not proof that the game has started. The engine
+        waits for a verified foreground Fortnite window before sending input.
+        """
         self._control_received("start")
+        if self.engine.running:
+            was_paused = self.engine.paused
+            resumed = self.engine.start()
+            if was_paused and not resumed:
+                return {"ok": False, "reason": "return_to_game"}
+            return {"ok": True, "reason": "resumed" if was_paused else "already_running"}
+        if self.cfg.afk_launch_game and not getattr(self.io, "game_window_found", lambda: False)():
+            launcher = getattr(self.io, "launch_game", None)
+            if callable(launcher):
+                try:
+                    if not launcher():
+                        return {"ok": False, "reason": "epic_launcher_unavailable"}
+                except (OSError, ValueError) as exc:
+                    return {"ok": False, "reason": "epic_launch_error", "detail": str(exc)[:180]}
+                self.engine.start()
+                return {"ok": True, "reason": "launch_requested"}
+        # Focus the already-running game BEFORE starting the worker. This
+        # removes a race where a quick Alt+Tab occurs after window activation
+        # but before the engine has seen Fortnite once.
+        if self.cfg.auto_focus and getattr(self.io, "game_window_found", lambda: False)():
+            try:
+                self.io.focus_game()
+            except (OSError, RuntimeError):
+                pass
         self.engine.start()
+        return {"ok": True, "reason": "started"}
 
     def input_probe_delayed(self, target: str = "fortnite") -> dict:
         """Schedule a test while the user switches to the target window."""
@@ -279,9 +393,13 @@ class Backend:
         self._control_received("stop")
         self.engine.stop()
 
-    def pause(self) -> None:
+    def pause(self) -> dict:
         self._control_received("pause")
-        self.engine.toggle_pause()
+        was_paused = self.engine.paused
+        changed = self.engine.toggle_pause()
+        if not changed:
+            return {"ok": False, "reason": "return_to_game" if was_paused else "not_running"}
+        return {"ok": True, "reason": "resumed" if was_paused else "paused"}
 
     def focus_game_now(self) -> dict:
         """Switch only to a verified Fortnite window, if Windows permits it."""
@@ -315,6 +433,18 @@ class Backend:
                     if v not in STRS[k]:
                         raise ValueError(k)
                     setattr(self.cfg, k, v)
+                elif k in ("afk_start_hotkey", "afk_stop_hotkey", "afk_pause_hotkey"):
+                    key = str(v).strip().upper()
+                    allowed = (AFK_PAUSE_HOTKEY_CHOICES if k == "afk_pause_hotkey"
+                               else AFK_HOTKEY_CHOICES)
+                    others = [name for name in
+                              ("afk_start_hotkey", "afk_stop_hotkey", "afk_pause_hotkey")
+                              if name != k]
+                    if (key not in allowed or
+                            (k == "afk_start_hotkey" and key == "F12") or
+                            key in (getattr(self.cfg, name) for name in others)):
+                        raise ValueError(k)
+                    setattr(self.cfg, k, key)
                 elif k == "afk_keys":
                     keys = "".join(dict.fromkeys(c for c in str(v).lower() if c in "wasd"))
                     if not keys:
@@ -490,8 +620,8 @@ class Backend:
         except Exception as exc:
             self.log("log.error", err="release news: " + str(exc))
             return list(self._release_news)
-        self._release_news = items
-        return list(items)
+        self._release_news = list(self._bundled_news) + [r for r in items if r.get("version") != self.version]
+        return list(self._release_news)
 
     # ------------------------------------------------------------ updates
     def update_check(self, url: str | None = None) -> dict:

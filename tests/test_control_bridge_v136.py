@@ -56,5 +56,7 @@ def test_hotkey_callbacks_do_not_block_polling_thread():
     code = (ROOT / "winio.py").read_text(encoding="utf-8")
     assert 'threading.Thread(target=invoke, name=f"hotkey-{vk}"' in code
     shell = (ROOT / "webapp.py").read_text(encoding="utf-8")
-    for hotkey, api in (("F7", "start"), ("F8", "stop"), ("F10", "pause")):
-        assert f'"{hotkey}": backend.{api}' in shell
+    assert 'backend.cfg.afk_start_hotkey: backend.start' in shell
+    assert 'backend.cfg.afk_stop_hotkey: backend.stop' in shell
+    assert '"F10": backend.pause' in shell
+    assert 'winio.HotkeyPoller(hotkey_bindings)' in shell

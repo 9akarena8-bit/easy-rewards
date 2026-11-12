@@ -81,7 +81,8 @@ def test_no_click_after_focus_changes_during_grab():
         eng.templates = [Template('start_play', 'start', tpl)]
         eng._tick()
         assert io.clicks == []
-        assert eng.state == 'waiting_window'
+        assert eng.state == 'paused'
+        assert eng.pause_reason == 'focus_lost'
 
 
 def test_saved_reward_total_survives_restart():
