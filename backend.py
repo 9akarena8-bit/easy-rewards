@@ -41,6 +41,7 @@ NUM_LIMITS = {          # key: (type, lo, hi)
 }
 # Reserve F6 input test, F9 counter and F10 pause. Distinct Start/Stop keys.
 AFK_HOTKEY_CHOICES = tuple(f"F{i}" for i in range(1, 13) if i not in (6, 9, 10))
+AFK_PAUSE_HOTKEY_CHOICES = ("F10",) + tuple(k for k in AFK_HOTKEY_CHOICES if k != "F12")
 BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "afk_launch_game", "afk_pause_on_alt_tab", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
          "afk_slide_enabled", "afk_camera_enabled", "afk_slot_enabled", "afk_pickaxe_enabled",
          "afk_grenade_enabled", "afk_weapon_enabled", "afk_replay_auto_detect")
@@ -90,8 +91,12 @@ class Backend:
             start_key = "F7"
         if stop_key not in AFK_HOTKEY_CHOICES or stop_key == start_key:
             stop_key = "F8" if start_key != "F8" else "F12"
+        pause_key = str(self.cfg.afk_pause_hotkey).upper()
+        if pause_key not in AFK_PAUSE_HOTKEY_CHOICES or pause_key in (start_key, stop_key):
+            pause_key = "F10"
         self.cfg.afk_start_hotkey = start_key
         self.cfg.afk_stop_hotkey = stop_key
+        self.cfg.afk_pause_hotkey = pause_key
         self.tracker = Tracker(self.base / "tracker.json")
         self._log: collections.deque = collections.deque(maxlen=80)
         self._log_n = 0
@@ -361,13 +366,16 @@ class Backend:
                     if v not in STRS[k]:
                         raise ValueError(k)
                     setattr(self.cfg, k, v)
-                elif k in ("afk_start_hotkey", "afk_stop_hotkey"):
+                elif k in ("afk_start_hotkey", "afk_stop_hotkey", "afk_pause_hotkey"):
                     key = str(v).strip().upper()
-                    other = ("afk_stop_hotkey" if k == "afk_start_hotkey"
-                             else "afk_start_hotkey")
-                    if (key not in AFK_HOTKEY_CHOICES or
+                    allowed = (AFK_PAUSE_HOTKEY_CHOICES if k == "afk_pause_hotkey"
+                               else AFK_HOTKEY_CHOICES)
+                    others = [name for name in
+                              ("afk_start_hotkey", "afk_stop_hotkey", "afk_pause_hotkey")
+                              if name != k]
+                    if (key not in allowed or
                             (k == "afk_start_hotkey" and key == "F12") or
-                            key == getattr(self.cfg, other)):
+                            key in (getattr(self.cfg, name) for name in others)):
                         raise ValueError(k)
                     setattr(self.cfg, k, key)
                 elif k == "afk_keys":
