@@ -941,3 +941,30 @@ STRINGS["uk"].update({
     "payments.draft_warning": "Це не рахунок і не замовлення продавцю. Нічого не надіслано, доступ не видано.",
     "payments.security": "Доступ надається лише після незалежної перевірки оплати чи обміну на сервері.",
 })
+
+# v1.3.9 beta: focus is automatically suspended when the user Alt+Tabs.
+# This is not the same as manually invoking Pause. Never claim the game reacted.
+STRINGS["ru"].update({
+    "log.focus_suspended": "Автопауза: Fortnite свернут или не активен. Управление остановлено.",
+    "log.focus_resumed": "Fortnite снова активно: продолжаем после короткой задержки.",
+    "afk.auto_pause_wait": "АВТОПАУЗА — вы вне Fortnite. Вернитесь в игру для продолжения.",
+    "afk.auto_pause_manual": "РУЧНАЯ ПАУЗА — нажмите клавишу продолжения.",
+    "afk.auto_pause_ready": "Автопауза при Alt+Tab включена. Возврат в игру продолжит работу.",
+    "set.focus": "Активировать окно Fortnite при запуске из лаунчера",
+})
+STRINGS["en"].update({
+    "log.focus_suspended": "Auto-suspended: Fortnite is not active. No input is sent.",
+    "log.focus_resumed": "Fortnite regained focus: resuming after a short delay.",
+    "afk.auto_pause_wait": "AUTO-PAUSED — Fortnite is not active. Return to the game to resume.",
+    "afk.auto_pause_manual": "MANUALLY PAUSED — use the Resume shortcut.",
+    "afk.auto_pause_ready": "Alt+Tab auto-suspend enabled. Returning to Fortnite resumes the run.",
+    "set.focus": "Focus Fortnite when starting from the launcher",
+})
+STRINGS["uk"].update({
+    "log.focus_suspended": "Автопауза: Fortnite неактивний. Управління призупинено.",
+    "log.focus_resumed": "Fortnite знову активний: продовження після короткої затримки.",
+    "afk.auto_pause_wait": "АВТОПАУЗА — Fortnite неактивний. Поверніться до гри для продовження.",
+    "afk.auto_pause_manual": "РУЧНА ПАУЗА — натисніть клавішу продовження.",
+    "afk.auto_pause_ready": "Автопауза під час Alt+Tab увімкнена. Повернення до Fortnite відновлює роботу.",
+    "set.focus": "Активувати вікно Fortnite під час запуску з лаунчера",
+})
