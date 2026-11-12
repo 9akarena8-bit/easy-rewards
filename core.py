@@ -72,25 +72,79 @@ class Config:
 
     @classmethod
     def load(cls, path: Path) -> "Config":
+        """Validate persisted config, preserving compatible older beta settings."""
         cfg = cls()
         try:
-            data = json.loads(Path(path).read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                return cfg
-            names = {f.name for f in fields(cls)}
-            for k, v in data.items():
-                if k in names:
-                    setattr(cfg, k, v)
-            # Backward-compatible settings from the approved-v2 design beta.
-            legacy = {"hotkey_start": "afk_start_hotkey",
-                      "hotkey_stop": "afk_stop_hotkey",
-                      "hotkey_pause": "afk_pause_hotkey",
-                      "auto_launch_game": "afk_launch_game"}
-            for old, new in legacy.items():
-                if old in data and new not in data:
-                    setattr(cfg, new, data[old])
-        except (OSError, ValueError, TypeError, AttributeError):
-            pass
+            data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError, UnicodeError, TypeError):
+            return cfg
+        if not isinstance(data, dict):
+            return cfg
+        for old, new in {"hotkey_start": "afk_start_hotkey",
+                         "hotkey_stop": "afk_stop_hotkey",
+                         "hotkey_pause": "afk_pause_hotkey",
+                         "auto_launch_game": "afk_launch_game"}.items():
+            if old in data and new not in data:
+                data[new] = data[old]
+        numbers = {
+            "threshold": (0.30, 0.99),
+            "scan_interval": (0.1, 5.0),
+            "click_delay": (0.0, 30.0),
+            "afk_interval": (1.0, 120.0),
+            "afk_hold": (0.1, 10.0),
+            "afk_pause_min": (0.2, 10.0),
+            "afk_pause_max": (0.2, 10.0),
+            "afk_camera_pixels_360": (100.0, 12000.0),
+        }
+        languages = {"ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr",
+                     "it", "ja", "ko", "zh", "ar"}
+        allowed_keys = {f"F{i}" for i in range(1, 13)}
+        for entry in fields(cls):
+            name = entry.name
+            if name not in data:
+                continue
+            value = data[name]
+            default = getattr(cfg, name)
+            if name in numbers:
+                low, high = numbers[name]
+                if type(value) not in (int, float) or not low <= value <= high:
+                    continue
+                value = float(value)
+            elif isinstance(default, bool):
+                if type(value) is not bool:
+                    continue
+            elif name == "scales":
+                if (not isinstance(value, list) or not 1 <= len(value) <= 8
+                        or any(type(v) not in (int, float) or not 0.5 <= v <= 2.0 for v in value)):
+                    continue
+                value = [float(v) for v in value]
+            elif name == "afk_keys":
+                if (not isinstance(value, str) or not value or len(value) > 4
+                        or any(k not in "wasd" for k in value)):
+                    continue
+            elif name in ("language", "ui_language"):
+                if not isinstance(value, str) or value not in (languages if name == "language" else {"ru", "en", "uk"}):
+                    continue
+            elif name == "theme":
+                if value not in ("dark", "light"):
+                    continue
+            elif name == "update_url":
+                if not isinstance(value, str) or len(value) > 2048 or (value and not value.startswith("https://")):
+                    continue
+            elif name in ("afk_start_hotkey", "afk_stop_hotkey", "afk_pause_hotkey"):
+                if not isinstance(value, str) or value not in allowed_keys:
+                    continue
+            elif type(value) is not type(default):
+                continue
+            setattr(cfg, name, value)
+        if cfg.afk_pause_min > cfg.afk_pause_max:
+            cfg.afk_pause_min, cfg.afk_pause_max = cls().afk_pause_min, cls().afk_pause_max
+        # Never accept duplicate or forbidden shortcuts from a hand-edited config.
+        keys = [cfg.afk_start_hotkey, cfg.afk_stop_hotkey, cfg.afk_pause_hotkey]
+        if (len(set(keys)) != 3 or
+                cfg.afk_start_hotkey == "F12" or cfg.afk_stop_hotkey == "F10" or
+                cfg.afk_pause_hotkey == "F12"):
+            cfg.afk_start_hotkey, cfg.afk_stop_hotkey, cfg.afk_pause_hotkey = "F7", "F8", "F10"
         return cfg
 
     def save(self, path: Path) -> None:
@@ -547,9 +601,17 @@ class Engine:
             elif action == "sprint_jump":
                 keys("w", "shift", "space"); label = "W+SHIFT+SPACE"
             elif action == "slide":
-                keys("w", "shift", "ctrl"); label = "W+SHIFT+CTRL"
+                if hasattr(self.io, "slide_sequence"):
+                    self.io.slide_sequence(hold, False, should_abort)
+                else:
+                    keys("w", "shift", "ctrl")
+                label = "SPRINT → SLIDE"
             elif action == "slide_jump":
-                keys("w", "shift", "ctrl", "space"); label = "W+SHIFT+CTRL+SPACE"
+                if hasattr(self.io, "slide_sequence"):
+                    self.io.slide_sequence(hold, True, should_abort)
+                else:
+                    keys("w", "shift", "ctrl", "space")
+                label = "SPRINT → SLIDE → JUMP"
             elif action == "yaw":
                 angle = random.randint(25, 360)
                 direction = random.choice((-1, 1))
