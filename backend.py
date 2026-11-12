@@ -7,6 +7,7 @@ the screen/keyboard layer (`io`) is injected.
 from __future__ import annotations
 
 import base64
+import os
 import sys
 import collections
 import threading
@@ -21,6 +22,7 @@ import treasure
 import release_updater
 import subscription_preview
 import payment_hub
+from merchant_service.license_client import LicenseClient
 import support_report
 import discord_notifications
 import webbrowser
@@ -73,7 +75,7 @@ class Backend:
         "tracker_reset", "update_check", "update_prepare", "update_install", "open_mini", "close_mini",
         "input_probe_delayed", "create_support_report", "open_support",
         "discord_configure", "discord_test", "discord_clear",
-        "payment_interest_create",
+        "payment_interest_create", "license_activate", "license_check",
     )
 
     def __init__(self, base, io, hooks: Hooks | None = None):
@@ -107,6 +109,21 @@ class Backend:
         self._control_time = ""
         self.reward_stats = RewardStats(self.base / "rewards.json")
         self.payment_drafts = payment_hub.LocalInterestDrafts(self.base / "payment_interest_drafts.json")
+        # Opt-in integration preview only; unset in production until the
+        # actual licensing policy and payment processors have been approved.
+        license_url = os.environ.get("FPT_LICENSE_SERVER_URL", "").strip()
+        self.license_client = None
+        self._license_status = {"configured": False, "ok": False,
+                                "error": "server_not_configured"}
+        self._license_lock = threading.RLock()
+        if license_url:
+            try:
+                self.license_client = LicenseClient(license_url)
+                self._license_status = {"configured": True, "ok": False,
+                                        "error": "not_checked"}
+            except ValueError:
+                self._license_status = {"configured": False, "ok": False,
+                                        "error": "invalid_https_server"}
         self.engine = Engine(self.cfg, io, self.templates_root, log=self.log,
                              on_reward=self.reward_stats.increment)
         self._shot: np.ndarray | None = None
@@ -121,6 +138,13 @@ class Backend:
         self._config_save_lock = threading.Lock()
         self.restart_requested = False
         self.version = updater.local_version(self.base)
+        self._bundled_news = [{"version": "1.4.0-beta",
+            "title": "Fortnite Pirate Token v1.4.0 Beta — сборка для тестирования",
+            "notes": ("Новый пиратский дизайн; Alt+Tab ставит Anti-AFK на паузу и требует продолжения, "
+                      "настраиваемые горячие клавиши, запуск через Epic Launcher и улучшенный подкат. "
+                      "Telegram Stars, карты, СБП, QR, перевод и скины — демо, без реальной оплаты. "
+                      "Работа в Fortnite требует проверки на Windows.")}] if self.version == "1.4.0" else []
+        self._release_news = list(self._bundled_news)
 
     # ------------------------------------------------------------ plumbing
     def log(self, key: str, /, **kw) -> None:
@@ -149,6 +173,46 @@ class Backend:
                                 skin_selection: dict | None = None) -> dict:
         """Save a local, non-payable request. NEVER accept payment or grant access."""
         return self.payment_drafts.create(plan, method, game, skin_selection)
+
+    def license_activate(self, key: str) -> dict:
+        """Explicit, opt-in activation. The launcher never processes a payment."""
+        if self.license_client is None:
+            return {"ok": False, "error": "server_not_configured"}
+        if not isinstance(key, str) or len(key.strip()) > 120 or not key.strip():
+            return {"ok": False, "error": "invalid_key"}
+        with self._license_lock:
+            try:
+                result = self.license_client.activate(key)
+                self._license_status = self._license_public_status(result)
+                return dict(self._license_status)
+            except (OSError, ValueError):
+                self._license_status = {"configured": True, "ok": False, "error": "server_unavailable"}
+                return dict(self._license_status)
+
+    def license_check(self) -> dict:
+        """Check a previously activated key without exposing it to frontend state."""
+        if self.license_client is None:
+            return {"ok": False, "error": "server_not_configured"}
+        with self._license_lock:
+            try:
+                result = self.license_client.check()
+                self._license_status = self._license_public_status(result)
+                return dict(self._license_status)
+            except (OSError, ValueError):
+                self._license_status = {"configured": True, "ok": False, "error": "server_unavailable"}
+                return dict(self._license_status)
+
+    @staticmethod
+    def _license_public_status(result: dict) -> dict:
+        if not isinstance(result, dict):
+            return {"configured": True, "ok": False, "error": "bad_response"}
+        return {"configured": True,
+                "ok": result.get("ok") is True,
+                "error": str(result.get("error", ""))[:70] if result.get("ok") is not True else "",
+                "expires_at": result.get("expires_at") if type(result.get("expires_at")) is int else None,
+                "seconds_left": max(0, result["seconds_left"]) if type(result.get("seconds_left")) is int else None,
+                # A valid server response is NOT proof paid features are enforced.
+                "enforcement_enabled": False}
 
     def create_support_report(self) -> dict:
         """User-triggered local diagnostic file. Never auto-upload or leak secrets."""
@@ -266,6 +330,7 @@ class Backend:
             "update": dict(self._upd),
             "release_news": list(self._release_news),
             "subscription": subscription_preview.snapshot(),
+            "license_status": dict(self._license_status),
             "payment_hub": {**payment_hub.catalog(),
                             "drafts": self.payment_drafts.recent()},
             "treasure": trs,
@@ -555,8 +620,8 @@ class Backend:
         except Exception as exc:
             self.log("log.error", err="release news: " + str(exc))
             return list(self._release_news)
-        self._release_news = items
-        return list(items)
+        self._release_news = list(self._bundled_news) + [r for r in items if r.get("version") != self.version]
+        return list(self._release_news)
 
     # ------------------------------------------------------------ updates
     def update_check(self, url: str | None = None) -> dict:
