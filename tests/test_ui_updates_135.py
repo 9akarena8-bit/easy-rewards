@@ -110,3 +110,14 @@ def test_github_release_api_uses_json_accept_header(monkeypatch):
     assert requests[0].get_header("X-github-api-version") == "2022-11-28"
     release_updater._urlopen("https://github.com/9akarena8-bit/easy-rewards/releases/download/v1.3.6/installer.exe")
     assert requests[1].get_header("Accept") == "application/octet-stream"
+
+def test_beta_news_uses_real_installed_version(tmp_path):
+    b = Backend(tmp_path, IO())
+    b.set_build_version("1.4.1")
+    assert b.state()["version"] == "1.4.1"
+    assert b.state()["release_news"][0]["version"] == "1.4.1-beta"
+    assert "лобби" in b.state()["release_news"][0]["notes"]
+    b.set_build_version("1.4.0")
+    assert b.state()["release_news"][0]["version"] == "1.4.0-beta"
+    b.set_build_version("1.3.9")
+    assert not b._bundled_news

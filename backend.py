@@ -142,7 +142,11 @@ class Backend:
         self._lock = threading.Lock()
         self._config_save_lock = threading.Lock()
         self.restart_requested = False
-        self.version = updater.local_version(self.base)
+        self.set_build_version(updater.local_version(self.base))
+
+    def set_build_version(self, version: str) -> None:
+        """Rebuild news after webapp resolves the bundled VERSION file."""
+        self.version = str(version).strip()
         self._bundled_news = [{"version": "1.4.0-beta",
             "title": "Fortnite Pirate Token v1.4.0 Beta — сборка для тестирования",
             "notes": ("Новый пиратский дизайн; Alt+Tab ставит Anti-AFK на паузу и требует продолжения, "
