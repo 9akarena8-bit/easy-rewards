@@ -12,7 +12,7 @@
   let profileOpen = false;
   const ui = (ru, en, uk) => ({ru, en, uk})[ST?.cfg?.ui_language || "ru"] || ru;
   const safe = value => esc(value == null ? "" : value);
-  const statusBadge = () => `<span class="gold-status"><i class="gold-led ${ST.engine.running && !ST.engine.paused ? "active" : ""}"></i>${safe(t("state." + ST.engine.state))}</span>`;
+  const statusBadge = () => `<span class="gold-status"><i class="gold-led ${ST.engine.running && !ST.engine.paused && !ST.engine.focus_suspended ? "active" : ""}"></i>${safe(t("state." + ST.engine.state))}</span>`;
   const updateReady = () => ["available", "downloading", "ready"].includes(ST.update?.status) && hiddenUpdateVersion !== ST.update.version;
   const updateCount = () => updateReady() ? 1 : 0;
   const navTitle = id => {
