@@ -8,7 +8,8 @@ This is an **unofficial** community utility, not affiliated with Epic Games or F
   Protocol dispatch is only a request; it does not guarantee the game opened or became ready.
 - With an existing Fortnite window, Start requests window focus. Windows may deny the request.
 - Anti-AFK global Start/Stop hotkeys can be edited in **Settings** and **Anti-AFK**.
-  Defaults: F7 Start, F8 Stop; F6 test, F9 counter, F10 pause are reserved.
+  Defaults: F7 Start, F8 Stop. **F12 always stops** the anti-AFK engine,
+  independently of custom shortcuts. F6 test, F9 counter, F10 pause are reserved.
 - The Stop button and the configured global Stop key must remain responsive.
 - All payment methods are *preview-only*. Do not pay, trade skins, or send money to testers.
 - Subscriptions are *not* active; there is no reliable licence enforcement or automatic delivery.
@@ -22,7 +23,7 @@ This is an **unofficial** community utility, not affiliated with Epic Games or F
 5. With Fortnite closed, press Start; confirm that the Epic Launcher *tries* to open Fortnite.
    If not, note whether the Epic Launcher is installed, and copy the error text.
 6. With Fortnite open, check that Start focuses the verified game or displays waiting state.
-7. Press the configured Stop key with the launcher minimized. Confirm engine status is Stopped.
+7. Press the configured Stop key with the launcher minimized. Confirm engine status is Stopped. Restart and press F12: emergency Stop must work even after rebinding.
 8. Repeat with Start/Stop buttons in the app. Try Pause and inspect the diagnostics panel.
 9. Verify that settings are kept after closing and reopening the app.
 10. Report Windows version, app version, reproduction steps, screenshot, and diagnostics
