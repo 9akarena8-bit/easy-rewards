@@ -43,6 +43,9 @@ class Config:
     require_foreground: bool = True  # only act while the game window is active
     auto_focus: bool = True          # try to bring the game window to front
     afk_enabled: bool = True
+    afk_launch_game: bool = True  # ask Epic Launcher to open Fortnite on Start
+    afk_start_hotkey: str = "F7"  # editable global shortcuts
+    afk_stop_hotkey: str = "F8"
     afk_extra_enabled: bool = False  # opt in to jumps/clicks/item swaps
     afk_interval: float = 6.0       # seconds between anti-AFK presses
     afk_hold: float = 3.0           # max seconds a key is held
