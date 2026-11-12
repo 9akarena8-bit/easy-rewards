@@ -8,7 +8,15 @@ let tplRole = "start", tplName = "", S = {}, ST = null, page = "home", sig = "",
 const PAGES = [["home", "◉", "nav.home"], ["afk", "↝", "nav.afk"], ["tracker", "✦", "nav.tracker"], ["templates", "▣", "nav.templates"],
   ["settings", "⚙", "nav.settings"], ["updates", "⟳", "nav.updates"], ["subscriptions", "◇", "nav.subscriptions"], ["support", "⚑", "nav.support"], ["guide", "?", "nav.guide"]];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
-const t = (k, kw = {}) => (S[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "");
+const HOTKEY_LABELS = new Set(["hotkeys", "set.hotkeys_text", "diag.focus_hint", "guide.s4_d", "afk.safety"]);
+const t = (k, kw = {}) => {
+  let value = S[k] ?? k;
+  if (ST?.cfg && HOTKEY_LABELS.has(k)) {
+    const current = {"F7":ST.cfg.hotkey_start, "F8":ST.cfg.hotkey_stop, "F10":ST.cfg.hotkey_pause};
+    value = value.replace(/\bF(?:7|8|10)\b/g, key => current[key] || key);
+  }
+  return value.replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "");
+};
 const fmtT = seconds => { const s = Math.floor(Math.max(0, Number(seconds) || 0)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(n => String(n).padStart(2, "0")).join(":"); };
 const num = n => Number(n).toLocaleString();
 const tog = (k, on) => `<div class="tog ${on ? "on" : ""}" data-tog="${k}"></div>`;
