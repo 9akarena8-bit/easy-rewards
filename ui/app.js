@@ -56,6 +56,16 @@ function refreshLiveMetrics() {
   updateText('[data-live="rewards"]', num(e.rewards || 0));
   updateText('[data-live="afk-total"]', t("afk.total") + ": " + (e.input_count || 0));
   updateText('[data-live="afk-last"]', t("afk.last") + ": " + (e.last_input || "—"));
+  document.querySelectorAll('[data-live="pause-hint"]').forEach(node => {
+    node.hidden = !(e.running && e.paused);
+    if (!node.hidden) node.textContent = e.pause_reason === "focus_lost"
+      ? controlUi("Alt+Tab: действия остановлены. Вернись в Fortnite и нажми F10, чтобы продолжить.",
+                  "Alt+Tab: actions paused. Return to Fortnite and press F10 to resume.",
+                  "Alt+Tab: дії призупинено. Повернися у Fortnite та натисни F10.")
+      : controlUi("Анти-AFK на паузе. Вернись в Fortnite и нажми F10.",
+                  "Anti-AFK paused. Return to Fortnite and press F10.",
+                  "Анти-AFK на паузі. Повернися у Fortnite та натисни F10.");
+  });
   updateText('[data-live="game-status"]', ST.diagnostics?.game_active ? t("diag.active")
     : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing")));
   updateText('[data-live="foreground-title"]', ST.diagnostics?.foreground_title || t("diag.none"));
@@ -110,6 +120,8 @@ async function runControlAction(action, target = "fortnite") {
       const reason = result.reason || "unknown";
       toast(action === "focusgame" && S["afk.focus_" + reason]
         ? t("afk.focus_" + reason)
+        : reason === "return_to_game"
+          ? controlUi("Для продолжения переключись в Fortnite и нажми F10.", "Return to Fortnite and press F10 to resume.", "Повернися у Fortnite та натисни F10 для продовження.")
         : reason === "epic_launcher_unavailable"
           ? controlUi("Не найден Epic Games Launcher. Запусти Fortnite вручную или отключи автозапуск в настройках.", "Epic Games Launcher not found. Launch Fortnite manually or disable auto-launch.", "Epic Games Launcher не знайдено. Запусти Fortnite вручну або вимкни автозапуск.")
           : controlUi("Команда отклонена: ", "Command rejected: ", "Команду відхилено: ") + reason);
@@ -244,6 +256,7 @@ const PAGE = {
       <span class="badge" data-live="afk-total">${t("afk.total")}: ${e.input_count}</span>
       <span class="badge" data-live="afk-last">${t("afk.last")}: ${esc(e.last_input || "—")}</span>
     </div>
+    <p class="afk-pause-banner" data-live="pause-hint" ${!e.paused ? "hidden" : ""}></p>
     ${e.input_error ? `<div class="warnbox">${esc(e.input_error)}</div>` : ""}
     <div class="card afk-diag" style="margin-bottom:16px">
       <h3>${t("diag.heading")}</h3>
@@ -273,6 +286,7 @@ const PAGE = {
       ${f(t("afk.keys"), `<input class="in" type="text" data-cfg="afk_keys" maxlength="4" value="${esc(c.afk_keys)}">`)}
       <h3 style="margin-top:14px">${controlUi("Запуск и остановка", "Start and stop", "Запуск і зупинка")}</h3>
       ${f(controlUi("Открывать Fortnite при запуске", "Launch Fortnite on Start", "Відкривати Fortnite під час запуску"), tog("afk_launch_game", c.afk_launch_game))}
+      ${f(controlUi("Автопауза при Alt+Tab", "Auto-pause on Alt+Tab", "Автопауза при Alt+Tab"), tog("afk_pause_on_alt_tab", c.afk_pause_on_alt_tab))}
       ${f(controlUi("Клавиша запуска", "Start hotkey", "Клавіша запуску"), hotkeyPicker("afk_start_hotkey", c.afk_start_hotkey))}
       ${f(controlUi("Клавиша остановки", "Stop hotkey", "Клавіша зупинки"), hotkeyPicker("afk_stop_hotkey", c.afk_stop_hotkey))}
       <p class="mute hotkey-help">${hotkeyHelp()}</p>
@@ -349,6 +363,7 @@ const PAGE = {
       ${f(controlUi("Запустить анти-AFK", "Start anti-AFK", "Запустити анти-AFK"), hotkeyPicker("afk_start_hotkey", c.afk_start_hotkey))}
       ${f(controlUi("Остановить анти-AFK", "Stop anti-AFK", "Зупинити анти-AFK"), hotkeyPicker("afk_stop_hotkey", c.afk_stop_hotkey))}
       ${f(controlUi("Открывать Fortnite автоматически", "Launch Fortnite automatically", "Автоматично запускати Fortnite"), tog("afk_launch_game", c.afk_launch_game))}
+      ${f(controlUi("Ставить анти-AFK на паузу при Alt+Tab", "Pause anti-AFK on Alt+Tab", "Призупиняти анти-AFK при Alt+Tab"), tog("afk_pause_on_alt_tab", c.afk_pause_on_alt_tab))}
       <p class="mute hotkey-help">${hotkeyHelp()}</p></div>
     <div class="card"><h3>${t("set.recognition")}</h3>
       ${f(t("set.threshold"), sl("threshold", .3, .99, .01, c.threshold))}${f(t("set.scan"), sl("scan_interval", .1, 3, .1, c.scan_interval))}${f(t("set.delay"), sl("click_delay", 0, 10, .5, c.click_delay))}
