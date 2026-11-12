@@ -46,3 +46,14 @@ def test_official_news_includes_beta_full_body_and_actual_date(monkeypatch):
     assert items[0]["prerelease"] is True
     assert items[0]["published_at"] == "2026-11-12T03:35:44Z"
     assert items[0]["notes"] == notes.strip()
+
+
+def test_offline_changelog_has_verified_versions_and_no_future_patch():
+    js = (ROOT / "ui" / "gold_ui.js").read_text(encoding="utf-8")
+    assert 'offlinePatches' in js
+    assert 'releaseAllowed' in js
+    assert '2026-11-12T03:35:44Z' in js
+    assert 'v1.4.2 Beta' in js
+    assert '2026-11-12T02:05:52Z' in js
+    assert '2026-11-12T00:01:42Z' in js
+    assert 'v1.5.0 Beta' not in js
