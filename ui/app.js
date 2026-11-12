@@ -22,6 +22,23 @@ const num = n => Number(n).toLocaleString();
 const tog = (k, on) => `<div class="tog ${on ? "on" : ""}" data-tog="${k}"></div>`;
 function toast(m) { clearTimeout(toastT); document.querySelectorAll(".toast").forEach(e => e.remove());
   const d = document.createElement("div"); d.className = "toast"; d.textContent = m; document.body.append(d); toastT = setTimeout(() => d.remove(), 2200); }
+const focusStatusLabel = code => {
+  const lang = ST?.cfg?.ui_language || "ru";
+  const messages = {
+    launch_requested: ["Запрос на запуск через Epic Games отправлен. Ожидаем окно Fortnite.",
+      "Launch requested via Epic Games. Waiting for the Fortnite window.",
+      "Запуск через Epic Games запитано. Очікуємо вікно Fortnite."],
+    launcher_unavailable: ["Не найден обработчик Epic Games Launcher.",
+      "Epic Games Launcher protocol is not available.",
+      "Протокол Epic Games Launcher недоступний."],
+    focused: ["Fortnite активен", "Fortnite is focused", "Fortnite активний"],
+    denied: ["Windows не разрешила переключить окно — переключись вручную.",
+      "Windows denied focus; switch to the game manually.",
+      "Windows не дозволила перемкнути вікно — перейдіть вручну."]
+  };
+  const indexes = {ru:0,en:1,uk:2};
+  return (messages[code] || [code || "—",code || "—",code || "—"])[indexes[lang] ?? 0];
+};
 const cname = c => c.name || t(c.key);
 const languageButton = l => `<button class="${ST.cfg.ui_language === l ? "on" : ""}" data-ui="${l}" title="${esc(t("lang." + l))}">${({ru:"🇷🇺",en:"🇬🇧",uk:"🇺🇦"})[l]} <span>${esc(t("lang.short_" + l))}</span></button>`;
 
@@ -60,6 +77,7 @@ function refreshLiveMetrics() {
     : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing")));
   updateText('[data-live="foreground-title"]', ST.diagnostics?.foreground_title || t("diag.none"));
   updateText('[data-live="foreground-process"]', ST.diagnostics?.foreground_process || "—");
+  updateText('[data-live="focus-result"]', focusStatusLabel(e.focus_result));
   updateText('[data-live="last-control"]', (ST.controls?.last || "—")
     + " " + (ST.controls?.time || "") + " (" + Number(ST.controls?.sequence || 0) + ")");
   document.querySelectorAll('button[data-act="start"]').forEach(node => { node.disabled = Boolean(e.running); });
@@ -264,6 +282,7 @@ const PAGE = {
     <div class="card afk-diag" style="margin-bottom:16px">
       <h3>${t("diag.heading")}</h3>
       <p class="mute">${t("afk.diag_status")}: <b data-live="game-status">${ST.diagnostics?.game_active ? t("diag.active") : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing"))}</b></p>
+      <p class="mute">${hotkeyLocale("Запуск / фокус игры", "Game launch / focus", "Запуск / фокус гри")}: <b data-live="focus-result">${esc(focusStatusLabel(e.focus_result))}</b></p>
       <p class="mute">${t("diag.foreground")}: <b data-live="foreground-title">${esc(ST.diagnostics?.foreground_title || t("diag.none"))}</b>
         (<span data-live="foreground-process">${esc(ST.diagnostics?.foreground_process || "—")}</span>)</p>
       <p class="mute">${t("afk.last_control")}: <b data-live="last-control">${esc(ST.controls?.last || "—")} ${esc(ST.controls?.time || "")} (${Number(ST.controls?.sequence || 0)})</b></p>
@@ -280,6 +299,7 @@ const PAGE = {
     </div>
     <div class="grid g2" style="align-items:start">
     <div class="card"><h3>${t("afk.mode")}</h3>
+      ${f(hotkeyLocale("Открывать Fortnite через Epic Games, если игра закрыта", "Launch Fortnite via Epic Games when not running", "Запускати Fortnite через Epic Games, якщо гра закрита"), tog("auto_launch_game", c.auto_launch_game))}
       ${f(t("afk.enabled"), tog("afk_enabled", c.afk_enabled))}
       ${f(t("afk.sequence"), tog("afk_sequence_enabled", c.afk_sequence_enabled))}
       ${f(t("afk.minpause"), sl("afk_pause_min", .2, 5, .1))}
