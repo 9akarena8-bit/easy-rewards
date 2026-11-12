@@ -119,3 +119,5 @@ def test_beta_gui_contains_live_hotkeys_and_existing_controls():
     assert 'backend.cfg.afk_start_hotkey: backend.start' in shell
     assert 'backend.cfg.afk_stop_hotkey: backend.stop' in shell
     assert 'HotkeyPoller(hotkey_bindings)' in shell
+    assert 'data-act="afk_report"' in js
+    assert 'if (a === "support_report" || a === "afk_report")' in js
