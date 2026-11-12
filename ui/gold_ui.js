@@ -112,6 +112,7 @@
        <button class="btn gold-stop" data-act="stop" ${!e.running ? "disabled" : ""}>■ ${t("btn.stop")}</button>
        <button class="btn gold-pause" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} ${e.paused ? t("btn.resume") : t("btn.pause")}</button></div>
       <div class="gold-hero-meta">${statusBadge()}<span class="gold-version">${ui("Версия", "Version", "Версія")} ${safe(ST.version)}</span></div>
+       <p class="afk-pause-banner gold-pause-banner" data-live="pause-hint" ${!e.paused ? "hidden" : ""}></p>
     </div><div class="gold-hero-visual" aria-hidden="true">
       <div class="gold-hero-halo"></div><img class="gold-chest" src="hero_chest.svg" alt="">
       <img class="gold-token token-a" src="pirate_token.png" alt=""><img class="gold-token token-b" src="pirate_token.png" alt=""><img class="gold-token token-c" src="pirate_token.png" alt="">
