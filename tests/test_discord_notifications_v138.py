@@ -139,3 +139,21 @@ def test_support_report_removes_webhook_from_unexpected_error(tmp_path):
     assert VALID not in result["text"]
     assert "DISCORD_WEBHOOK_REDACTED" in result["text"]
     assert VALID not in support_report.clean(VALID)
+
+
+def test_support_report_redacts_versioned_discord_webhook_urls(tmp_path):
+    import support_report
+    variants = (
+        VALID.replace("discord.com", "discordapp.com"),
+        VALID.replace("/api/webhooks/", "/api/v10/webhooks/"),
+        VALID.replace("/api/webhooks/", "/api/v9/webhooks/"),
+    )
+    b = Backend(tmp_path, IO())
+    for url in variants:
+        b.log("log.error", err="request failed: " + url + "?wait=true")
+    result = b.create_support_report()
+    assert result["ok"]
+    for url in variants:
+        assert url not in result["text"]
+        assert url not in support_report.clean("request failed: " + url)
+    assert result["text"].count("[DISCORD_WEBHOOK_REDACTED]") >= len(variants)
