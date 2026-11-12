@@ -11,6 +11,7 @@ const goldSource = fs.readFileSync(path.join(__dirname, "..", "ui", "gold_ui.js"
 
 function createBrowser() {
   const events = {};
+  const nodes = {};
   let writes = 0, visiblePage = null, calls = 0;
   const nodes = {};
   const main = {
@@ -113,4 +114,43 @@ test("Anti-AFK polling preserves buttons; stop dispatched once on pointerdown", 
 test("Gold popover close does not rerender synchronously during click capture", () => {
   assert.match(goldSource, /setTimeout\(\(\) => renderGold\(true\), 0\)/);
   assert.match(goldSource, /notificationOpen = false; profileOpen = false/);
+});
+
+
+test("Stop stays available during a queued start and launcher status updates live", () => {
+  const b = createBrowser();
+  const start = {}, stop = {}, status = {};
+  b.nodes['button[data-act="start"]'] = [start];
+  b.nodes['button[data-act="stop"]'] = [stop];
+  b.nodes['[data-live="launcher-game-status"]'] = [status];
+  vm.runInContext('ST.engine.running = false; ST.controls = {start_pending: true}; ST.diagnostics = {game_lookup_pending: true}; refreshLiveMetrics()', b.ctx);
+  assert.equal(start.disabled, true);
+  assert.equal(stop.disabled, false);
+  assert.equal(status.textContent, "Connecting…");
+  vm.runInContext('ST.controls.start_pending = false; ST.diagnostics = {game_active: true}; refreshLiveMetrics()', b.ctx);
+  assert.equal(start.disabled, false);
+  assert.equal(stop.disabled, true);
+  assert.equal(status.textContent, "diag.active");
+});
+
+test("Support shows configured contacts and keeps Discord webhook settings separate", () => {
+  const b = createBrowser();
+  vm.runInContext('ST.support_contacts = {github: "https://github.com/example/issues", telegram: ""}; ST.discord_notifications = {enabled: true};', b.ctx);
+  const support = vm.runInContext("PAGE.support()", b.ctx);
+  assert.match(support, /data-act="support_report"/);
+  assert.match(support, /data-channel="github"/);
+  assert.doesNotMatch(support, /data-channel="telegram"|discord-webhook/);
+  const notifications = vm.runInContext("PAGE.notifications()", b.ctx);
+  assert.match(notifications, /id="discord-webhook" type="password"/);
+  assert.match(notifications, /data-act="discord_save"/);
+});
+
+test("Selecting a subscription plan updates the existing draft form", async () => {
+  const b = createBrowser();
+  vm.runInContext('ST.subscription = {plans: [{id: "demo"}, {id: "week"}]};', b.ctx);
+  const button = {dataset: {plan: "week"}};
+  await b.events.click({target: {closest(selector) {
+    return selector === "[data-window]" ? null : button;
+  }}});
+  assert.equal(vm.runInContext("payPlan", b.ctx), "week");
 });

@@ -12,7 +12,6 @@
   let profileOpen = false;
   const ui = (ru, en, uk) => ({ru, en, uk})[ST?.cfg?.ui_language || "ru"] || ru;
   const safe = value => esc(value == null ? "" : value);
-  const statusBadge = () => `<span class="gold-status"><i class="gold-led ${ST.engine.running && !ST.engine.paused ? "active" : ""}"></i>${safe(t("state." + ST.engine.state))}</span>`;
   const updateReady = () => ["available", "downloading", "ready"].includes(ST.update?.status) && hiddenUpdateVersion !== ST.update.version;
   const updateCount = () => updateReady() ? 1 : 0;
   const navTitle = id => {
@@ -215,61 +214,59 @@
     ["templates", "▣", "nav.templates"], ["updates", "▤", "nav.updates"],
     ["subscriptions", "♛", "nav.subscriptions"], ["settings", "⚙", "nav.settings"],
     ["support", "⚑", "nav.support"], ["account", "◉", "nav.account"], ["guide", "?", "nav.guide"]);
+  const publicPages = ["home", "subscriptions", "updates", "support", "settings"];
+  const renderNav = id => {
+    const [, icon] = PAGES.find(([route]) => route === id);
+    const current = page === id || (id === "settings" && ["afk", "tracker", "templates"].includes(page));
+    const title = safe(navTitle(id));
+    return `<button class="nav ${current ? "on" : ""}" data-page="${id}" title="${title}"
+      aria-label="${title}" ${current ? 'aria-current="page"' : ""}><i aria-hidden="true">${icon}</i><span>${title}</span>
+      ${id === "updates" && updateCount() ? '<b class="gold-nav-dot"></b>' : ""}</button>`;
+  };
   PAGE.home = function() {
-    const e = ST.engine, hist = Array.isArray(e.history) ? e.history : [], max = Math.max(1, ...hist.map(x => x.games + x.cycles));
-    const guide = ST.guide || {}, todo = !guide.dismissed && !(guide.c1 && guide.c2 && guide.c3);
-    const stats = [
-      [ui("Матчи", "Matches", "Матчі"),e.games],
-      [ui("Циклы", "Cycles", "Цикли"),e.cycles],
-      [ui("Время", "Time", "Час"),fmtT(e.runtime)],
-      [ui("Награды", "Rewards", "Нагороди"),num(e.rewards || 0)]];
+    const e = ST.engine;
     return `<section class="gold-hero"><div class="gold-hero-copy">
       <div class="gold-hero-kicker"><span>✦</span> ${ui("ТВОЙ ПОМОЩНИК В FORTNITE", "YOUR FORTNITE COMPANION", "ТВІЙ ПОМІЧНИК У FORTNITE")}</div>
-      <h2>${ui("Добро пожаловать в", "Welcome to", "Ласкаво просимо до")}<br><span>Fortnite Pirate Token</span></h2>
+      <h2>${ui("Добро пожаловать в", "Welcome to", "Ласкаво просимо до")}<br><span class="launcher-wordmark">Fortnite Pirate Token</span></h2>
       <p class="gold-slogan">${ui("Получай награды — не трать силы и нервы.", "Earn rewards — save your time and energy.", "Отримуй нагороди — бережи час і сили.")}</p>
-      <div class="gold-hero-actions"><button class="btn pri gold-play" data-act="start" ${e.running ? "disabled" : ""}><span>▶</span> ${t("btn.start")}</button>
-       <button class="btn gold-stop" data-act="stop" ${!e.running && !ST.controls?.start_pending ? "disabled" : ""}>■ ${t("btn.stop")}</button>
+      <div class="gold-hero-actions"><button class="btn pri gold-play" data-act="start" ${e.running ? "disabled" : ""}><span aria-hidden="true">▶</span> ${ui("Запустить", "Start", "Запустити")}</button>
+       <button class="btn gold-stop" data-act="stop" ${!e.running && !ST.controls?.start_pending ? "disabled" : ""}>■ ${ui("Остановить", "Stop", "Зупинити")}</button>
        <button class="btn gold-pause" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} ${e.paused ? t("btn.resume") : t("btn.pause")}</button></div>
-      <div class="gold-hero-meta">${statusBadge()}<span class="gold-version">${ui("Версия", "Version", "Версія")} ${safe(ST.version)}</span></div>
+      <div class="gold-hero-meta"><span class="gold-status" data-live="launcher-engine-status">${safe(launcherEngineStatus())}</span><span class="gold-status" data-live="launcher-game-status">${safe(launcherGameStatus())}</span><span class="gold-version">${ui("Версия", "Version", "Версія")} ${safe(ST.version)}</span></div>
     </div><div class="gold-hero-visual" aria-hidden="true">
       <div class="gold-hero-halo"></div><img class="gold-chest" src="hero_chest.svg" alt="">
       <img class="gold-token token-a" src="pirate_token.png" alt=""><img class="gold-token token-b" src="pirate_token.png" alt=""><img class="gold-token token-c" src="pirate_token.png" alt="">
       <span class="gold-spark spark-a">✦</span><span class="gold-spark spark-b">✦</span></div></section>
-    <div class="gold-dashboard"><div class="gold-dashboard-main">${newsMarkup()}
-      <div class="gold-summary-grid"><section class="card gold-metrics"><div class="gold-section-head"><div><span class="gold-overline">${ui("ТВОЙ ПРОГРЕСС", "YOUR PROGRESS", "ТВІЙ ПРОГРЕС")}</span><h2>${ui("Статистика", "Statistics", "Статистика")}</h2></div></div>
-       <div class="gold-stat-grid">${stats.map(([name,value],index)=>`<div class="gold-stat"><b data-live="${["games","cycles","runtime","rewards"][index]}">${safe(value)}</b><span>${safe(name)}</span></div>`).join("")}</div>
-       <div class="gold-chart-label">${t("home.last_hour")}</div><div class="gold-bars">${hist.map(h=>`<i style="height:${Math.max(4,(h.games+h.cycles)/max*100)}%"></i>`).join("")}</div></section>
-      <section class="card gold-metrics gold-diagnostics"><div class="gold-section-head"><div><span class="gold-overline">${ui("ДИАГНОСТИКА", "DIAGNOSTICS", "ДІАГНОСТИКА")}</span><h2>${t("diag.heading")}</h2></div></div>
-        <div class="focus-line"><span>${t("diag.game")}</span><b class="${ST.diagnostics?.game_active ? "good" : "muted"}">${ST.diagnostics?.game_active ? t("diag.active") : t("diag.inactive")}</b></div>
-        <div class="focus-line"><span>${t("diag.foreground")}</span><b data-live="foreground-title">${safe(ST.diagnostics?.foreground_title || t("diag.none"))}</b></div>
-        <div class="focus-line"><span>${t("afk.last_control")}</span><b data-live="last-control">${safe(ST.controls?.last || "—")} ${safe(ST.controls?.time || "")} (${Number(ST.controls?.sequence || 0)})</b></div>
-        <div class="focus-line"><span>${t("diag.inputs")}</span><b>${safe(e.input_count || 0)}${e.last_input ? " · "+safe(e.last_input) : ""}</b></div>
-        ${e.input_error ? `<p class="focus-warn">${safe(e.input_error)}</p>` : ""}
-        ${e.running && !ST.diagnostics?.game_active && ST.cfg.require_foreground ? `<p class="focus-warn">${t("diag.focus_hint")}</p>` : ""}
-      </section></div>
-      <div class="card gold-activity"><div class="gold-section-head"><div><span class="gold-overline">${ui("ЖУРНАЛ", "ACTIVITY", "ЖУРНАЛ")}</span><h2>${t("log.title")}</h2></div></div>
-        <div class="log">${ST.log.slice(-6).reverse().map(r=>`${safe(r.t)}  ${safe(t(r.key, r.kw))}`).join("<br>") || "—"}</div></div>
-    </div><div class="gold-dashboard-side">${subCard()}
-      <div class="card gold-quick"><span class="gold-overline">${ui("БЫСТРЫЕ ДЕЙСТВИЯ", "QUICK ACTIONS", "ШВИДКІ ДІЇ")}</span>
-       <h2>${ui("Под контролем", "In control", "Під контролем")}</h2>
-       <div class="gold-quick-row"><span>${t("home.session")}</span><strong>${num(e.rewards || 0)} ✦</strong></div>
-       <div class="gold-quick-row"><span>${t("home.all_time")}</span><strong>${num(ST.reward?.total || 0)} ✦</strong></div>
-       <div class="gold-quick-row"><span>${t("stat.time")}</span><strong><span data-live="runtime">${fmtT(e.runtime)}</span></strong></div>
-       <div class="gold-quick-actions"><button class="btn sm" data-page="afk">${ui("Настройки анти-AFK", "Anti-AFK settings", "Налаштування анти-AFK")} ↗</button>
-       <button class="btn sm" data-act="ptest" data-target="fortnite">${ui("Тест ввода (F6)", "Input test (F6)", "Тест вводу (F6)")}</button>
-       <button class="btn sm" data-act="reset">${t("btn.reset")}</button></div>
-       <small>${hotkeySummary()}</small></div>
-      ${todo ? `<div class="card gold-tip"><span class="gold-overline">${ui("ПЕРВЫЙ ЗАПУСК", "GET STARTED", "ПЕРШИЙ ЗАПУСК")}</span><p>${t("guide.card")}</p>
-       <button class="btn pri sm" data-page="guide">${t("guide.open")}</button><button class="btn sm" data-act="dismiss">${t("guide.dismiss")}</button></div>` : ""}
-    </div></div>`;
+    <div class="gold-dashboard"><div class="gold-dashboard-main">${newsMarkup()}</div>
+      <div class="gold-dashboard-side">${subCard()}
+        <section class="card gold-metrics">
+          <h2>${t("diag.heading")}</h2>
+          <div class="focus-line"><span>Fortnite</span><b data-live="launcher-game-status">${safe(launcherGameStatus())}</b></div>
+          <div class="focus-line"><span>${ui("Лаунчер", "Launcher", "Лаунчер")}</span><b data-live="launcher-engine-status">${safe(launcherEngineStatus())}</b></div>
+          <p class="mute">${hotkeySummary()}</p>
+          <button class="btn sm" data-page="support">${t("nav.support")}</button>
+        </section>
+      </div>
+    </div>`;
   };
   PAGE.updates = function() {
     return newsMarkup(true) + `<div class="gold-updater">${originalUpdates()}</div>`;
   };
   PAGE.settings = function() {
-    return `<div class="card gold-settings-shortcut"><div><span class="gold-overline">FORTNITE PIRATE TOKEN</span><h2>${ui("Настройки анти-AFK", "Anti-AFK settings", "Налаштування анти-AFK")}</h2>
-       <p>${ui("Движение, камера, задержки и дополнительные действия находятся в отдельном разделе.", "Movement, camera, delays and extra actions are available in a dedicated section.", "Рухи, камера, затримки та додаткові дії розміщені в окремому розділі.")}</p></div>
-       <button class="btn pri" data-page="afk">${ui("Открыть анти-AFK", "Open anti-AFK", "Відкрити анти-AFK")} ↗</button></div>` + originalSettings();
+    return `<div class="launcher-settings">
+      ${originalSettings()}
+      ${PAGE.notifications()}
+      <section class="card launcher-panel">
+        <h3>${ui("Обновления и диагностика", "Updates and diagnostics", "Оновлення й діагностика")}</h3>
+        <p class="mute">v${safe(ST.version)}</p>
+        <div class="focus-line"><span>Fortnite</span><b data-live="launcher-game-status">${safe(launcherGameStatus())}</b></div>
+        <div class="focus-line"><span>${ui("Лаунчер", "Launcher", "Лаунчер")}</span><b data-live="launcher-engine-status">${safe(launcherEngineStatus())}</b></div>
+        <div class="row">
+          <button class="btn" data-page="updates">${ui("Новости и проверка обновлений", "News and update check", "Новини й перевірка оновлень")}</button>
+          <button class="btn" data-page="support">${t("nav.support")}</button>
+          <button class="btn" data-act="mini">${t("mini.open")}</button>
+        </div>
+      </section></div>`;
   };
   PAGE.account = function() {
     return `<section class="card gold-account"><div class="gold-account-identity"><img src="pirate_token.png" alt=""><div><span class="gold-overline">${ui("ЛОКАЛЬНЫЙ ПРОФИЛЬ", "LOCAL PROFILE", "ЛОКАЛЬНИЙ ПРОФІЛЬ")}</span>
@@ -287,12 +284,9 @@
     const root = document.getElementById("app");
     const rail = root?.querySelector(".rail"), top = root?.querySelector(".top");
     if (!rail || !top) return;
-    rail.innerHTML = `<div class="brand gold-brand"><img src="pirate_token.png" alt=""><span><b>FORTNITE</b><em>PIRATE TOKEN</em><small>LAUNCHER</small></span></div>
-      <div class="gold-nav-label">${ui("МЕНЮ", "MENU", "МЕНЮ")}</div>
-      <nav class="gold-nav">${PAGES.map(p=>`<button class="nav ${page === p[0] ? "on" : ""}" data-page="${p[0]}"><i>${p[1]}</i><span>${safe(navTitle(p[0]))}</span>${p[0] === "updates" && updateCount() ? '<b class="gold-nav-dot"></b>' : ""}</button>`).join("")}</nav>
-      <div class="gold-rail-bottom"><button class="gold-rail-profile" data-page="account"><img src="pirate_token.png" alt=""><span><strong>${ui("Мой профиль", "My profile", "Мій профіль")}</strong><small>${subscriptionNote()}</small></span><b>↗</b></button>
-        <div class="gold-rail-foot">${ui("Версия", "Version", "Версія")} ${safe(ST.version)}</div></div>`;
-    top.innerHTML = `<div class="gold-top-location"><span>${ui("FORTNITE / ЛАУНЧЕР", "FORTNITE / LAUNCHER", "FORTNITE / ЛАУНЧЕР")}</span><h1>${safe(navTitle(page))}</h1></div>
+    rail.innerHTML = `<div class="brand gold-brand"><img src="pirate_token.png" alt=""><span><b class="launcher-wordmark">FORTNITE</b><em>PIRATE TOKEN</em></span></div>
+      <nav class="gold-nav" aria-label="${ui("Основное меню", "Main menu", "Основне меню")}">${publicPages.map(renderNav).join("")}</nav>`;
+    top.innerHTML = `<div class="gold-top-location"><h1>${safe(navTitle(page))}</h1></div>
       <div class="gold-top-right"><span class="gold-top-version">v${safe(ST.version)}</span>
       <button class="gold-header-btn" data-gold="notifications" title="${ui("Уведомления", "Notifications", "Сповіщення")}" aria-label="${ui("Уведомления", "Notifications", "Сповіщення")}" aria-expanded="${notificationOpen}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>${updateCount()?'<i class="gold-alert-dot"></i>':""}</button>
@@ -311,6 +305,7 @@
     refreshLiveMetrics();
   }
   render = renderGold;
+  if (ST && document.getElementById("running-interface")) renderGold(true);
   document.addEventListener("click", ev => {
     const gold = ev.target.closest("[data-gold]");
     if (gold) {

@@ -113,3 +113,54 @@ body:not(.mini) .card{
   border-color:rgba(144,104,30,.4);
   background:#fff5dd;
 }
+
+/* Launcher navigation and service pages */
+.launcher-wordmark{position:relative;display:inline-block}
+.launcher-wordmark::before{
+  content:"";position:absolute;left:12%;top:-9px;width:25px;height:9px;
+  background:currentColor;clip-path:polygon(0 22%,24% 48%,36% 12%,50% 0,64% 12%,76% 48%,100% 22%,90% 79%,50% 100%,10% 79%);
+  pointer-events:none
+}
+.window-drag .launcher-wordmark::before{left:0;top:-5px;height:6px;width:18px;color:var(--acc)}
+.gold-brand .launcher-wordmark::before,.boot-screen .launcher-wordmark::before{color:var(--acc)}
+body:not(.mini) .gold-nav{overflow-y:visible}
+.gold-nav [data-page="settings"]{margin-top:auto}
+.gold-dashboard-side{min-width:0}
+.tog:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+.launcher-settings{display:grid;gap:16px}
+.launcher-settings .grid{align-items:start}
+.launcher-faq{grid-column:1/-1}
+.launcher-faq details,.launcher-advanced{margin-block:10px}
+.launcher-faq summary,.launcher-advanced summary{cursor:pointer;font-weight:650}
+.launcher-faq details[open] summary,.launcher-advanced[open] summary{margin-bottom:10px}
+:root:not([data-theme="light"]) body:not(.mini) .page:is([data-current-page="settings"],[data-current-page="support"]){
+  background:radial-gradient(ellipse at 70% 0,#342044,transparent 65%),#151022
+}
+:root:not([data-theme="light"]) body:not(.mini) .page:is([data-current-page="settings"],[data-current-page="support"]) .card{
+  background:linear-gradient(145deg,#30213f,#20172d);border-color:#725278
+}
+@media(max-height:485px){
+  body:not(.mini) .brand.gold-brand{margin-bottom:12px}
+  .gold-nav .nav{min-height:35px;padding-block:6px}
+}
+
+body:not(.mini){overflow:hidden;display:flow-root}
+:root[data-theme="light"] body:not(.mini) :is(.window-bar,#app,.rail,.top,.page){
+  background:var(--bg1);border-color:var(--line);box-shadow:none
+}
+:root[data-theme="light"] body:not(.mini) .card{
+  background:var(--card);border-color:var(--line);box-shadow:var(--shadow)
+}
+:root[data-theme="light"] .gold-nav .nav:not(.on){color:var(--ink)}
+:root[data-theme="light"] .gold-nav .nav:not(.on) i,
+:root[data-theme="light"] .brand.gold-brand em{color:#79521d}
+
+.gold-hero h2 .launcher-wordmark{margin-top:10px}
+.gold-hero h2 .launcher-wordmark::before{color:#ffd34f;left:8px;top:-9px}
+@media(min-width:875px){
+  .launcher-settings{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+  .launcher-settings>.grid{display:contents}
+  .launcher-settings>.grid>.card:first-child{grid-column:1;grid-row:1/3}
+  .launcher-settings>.grid>.launcher-advanced{grid-column:1/-1;grid-row:3;margin-block:0}
+  .launcher-settings>.launcher-panel{grid-column:2}
+}

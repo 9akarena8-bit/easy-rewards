@@ -25,7 +25,7 @@ const hotkeyHelp = () => controlUi(
   "Hotkeys work in game and when minimized. F10 is the fallback Pause/Resume; F12 is emergency Stop. Configurable keys must differ.",
   "Клавіші працюють у грі й згорнутому вікні. F10 — резервна пауза/продовження, F12 — аварійна зупинка. Налаштовані клавіші мають відрізнятися."
 );
-const tog = (k, on) => `<div class="tog ${on ? "on" : ""}" data-tog="${k}"></div>`;
+const tog = (k, on) => `<button type="button" class="tog ${on ? "on" : ""}" data-tog="${k}" role="switch" aria-checked="${Boolean(on)}"></button>`;
 function toast(m) { clearTimeout(toastT); document.querySelectorAll(".toast").forEach(e => e.remove());
   const d = document.createElement("div"); d.className = "toast"; d.textContent = m; document.body.append(d); toastT = setTimeout(() => d.remove(), 2200); }
 const cname = c => c.name || t(c.key);
@@ -55,6 +55,31 @@ function gameStatus() {
   if (d?.game_found) return t("afk.diag_background");
   if (d?.game_lookup_pending || d?.game_lookup_known === false) return t("afk.diag_searching");
   return t("afk.diag_missing");
+}
+
+function launcherGameStatus() {
+  const d = ST.diagnostics || {};
+  if (d.game_active) return t("diag.active");
+  if (d.game_found) return t("afk.diag_background");
+  if (d.game_lookup_pending || d.game_lookup_known === false) {
+    return controlUi("Подключение…", "Connecting…", "Підключення…");
+  }
+  if (d.game_lookup_error) {
+    return controlUi("Ошибка поиска", "Window search failed", "Помилка пошуку") + " (" + d.game_lookup_error + ")";
+  }
+  return t("afk.diag_missing");
+}
+
+function launcherEngineStatus() {
+  const e = ST.engine;
+  const error = ST.controls?.start_error || e.input_error;
+  if (error) return controlUi("Ошибка", "Error", "Помилка") + " · " + error;
+  if (e.running || e.paused) return t("state." + e.state);
+  if (ST.controls?.start_pending) return controlUi("Запуск…", "Starting…", "Запуск…");
+  if (ST.diagnostics?.game_active || ST.diagnostics?.game_found) {
+    return controlUi("Готов к запуску", "Ready to start", "Готовий до запуску");
+  }
+  return t("state." + e.state);
 }
 
 function refreshLiveMetrics() {
@@ -93,7 +118,11 @@ function refreshLiveMetrics() {
   updateText('[data-live="start-phase"]', ST.controls?.start_phase || "idle");
   updateText('[data-live="last-control"]', (ST.controls?.last || "—")
     + " " + (ST.controls?.time || "") + " (" + Number(ST.controls?.sequence || 0) + ")");
-  document.querySelectorAll('button[data-act="start"]').forEach(node => { node.disabled = Boolean(e.running); });
+  updateText('[data-live="launcher-game-status"]', launcherGameStatus());
+  updateText('[data-live="launcher-engine-status"]', launcherEngineStatus());
+  document.querySelectorAll('button[data-act="start"]').forEach(node => {
+    node.disabled = Boolean(e.running || ST.controls?.start_pending);
+  });
   document.querySelectorAll('button[data-act="stop"]').forEach(node => {
     node.disabled = !e.running && !ST.controls?.start_pending;
   });
@@ -184,14 +213,15 @@ function render(force) {
   if (!force && pointerIsDown) return;
   const a = document.activeElement, editing = a && a.matches && a.matches("input,select,textarea") && !MINI;
   const s = JSON.stringify([page, flt, ST.cfg.ui_language, ST.cfg.theme, ST.cfg, {...ST.engine, runtime: undefined}, ST.diagnostics, ST.tracker.rev, ST.week, ST.guide, ST.tpl_counts,
-    ST.update, ST.release_news, ST.subscription, ST.license_status, ST.discord_notifications, ST.log.length && ST.log.at(-1).n, tplList.length, !!shot, testRes, ST.cfg.guide_dismissed]);
+    ST.update, ST.release_news, ST.subscription, ST.license_status, ST.support_contacts, ST.discord_notifications, ST.log.length && ST.log.at(-1).n, tplList.length, !!shot, testRes, ST.cfg.guide_dismissed]);
   // Engine counters, focus and runtime change every poll. Replacing #app
   // each time destroys the buttons under the user's mouse in WebView2.
   // Keep Home and Anti-AFK DOM stable; update their metrics in place.
-  const stablePage = !MINI && (page === "home" || page === "afk" || page === "subscriptions");
+  const stablePage = !MINI && (page === "home" || page === "afk" || page === "subscriptions" || page === "support" || page === "settings");
   const staticSignature = JSON.stringify([page, flt, ST.cfg.ui_language, ST.cfg.theme,
     ST.cfg, ST.tracker.rev, ST.week, ST.guide, ST.tpl_counts, ST.update,
-    ST.release_news, ST.subscription, ST.license_status, ST.payment_hub, tplList.length, Boolean(shot), testRes]);
+    ST.release_news, ST.subscription, ST.license_status, ST.payment_hub, ST.support_contacts,
+    ST.discord_notifications, tplList.length, Boolean(shot), testRes]);
   const sameRenderedPage = document.querySelector('#app [data-current-page]')?.dataset.currentPage === page;
   if (!force && stablePage && sameRenderedPage && staticSignature === stableViewSignature) {
     refreshLiveMetrics();
@@ -394,7 +424,7 @@ const PAGE = {
       ${f(t("set.ui_language"), `<div class="seg lang-full">${["ru", "en", "uk"].map(l => `<button class="${c.ui_language === l ? "on" : ""}" data-ui="${l}">${({ru:"🇷🇺",en:"🇬🇧",uk:"🇺🇦"})[l]} ${esc(t("lang." + l))}</button>`).join("")}</div>`)}
       ${f(t("set.theme"), `<div class="seg">${["light", "dark"].map(l => `<button class="${c.theme === l ? "on" : ""}" data-theme="${l}">${t("theme." + l)}</button>`).join("")}</div>`)}
       ${f(t("set.game_language"), `<select data-cfg="language">${["ru", "en", "uk"].map(l => `<option value="${l}" ${c.language === l ? "selected" : ""}>${esc(t("lang." + l))}</option>`).join("")}</select>`)}
-      <h3 style="margin-top:18px">${t("set.season")}</h3>${f(t("set.week_start"), `<input type="datetime-local" id="wk" value="${ST.tracker.week_start}">`)}<div class="mute">${t("set.week_hint")}</div>
+      <details class="launcher-advanced"><summary>${t("set.season")}</summary><h3>${t("set.season")}</h3>${f(t("set.week_start"), `<input type="datetime-local" id="wk" value="${ST.tracker.week_start}">`)}<div class="mute">${t("set.week_hint")}</div></details>
       <h3 style="margin-top:18px">${t("set.hotkeys")}</h3>
       ${f(controlUi("Запустить анти-AFK", "Start anti-AFK", "Запустити анти-AFK"), hotkeyPicker("afk_start_hotkey", c.afk_start_hotkey))}
       ${f(controlUi("Остановить анти-AFK", "Stop anti-AFK", "Зупинити анти-AFK"), hotkeyPicker("afk_stop_hotkey", c.afk_stop_hotkey))}
@@ -402,11 +432,13 @@ const PAGE = {
       ${f(controlUi("Открывать Fortnite автоматически", "Launch Fortnite automatically", "Автоматично запускати Fortnite"), tog("afk_launch_game", c.afk_launch_game))}
       ${f(controlUi("Ставить анти-AFK на паузу при Alt+Tab", "Pause anti-AFK on Alt+Tab", "Призупиняти анти-AFK при Alt+Tab"), tog("afk_pause_on_alt_tab", c.afk_pause_on_alt_tab))}
       <p class="mute hotkey-help">${hotkeyHelp()}</p></div>
-    <div class="card"><h3>${t("set.recognition")}</h3>
+    <details class="card launcher-advanced"><summary>${t("set.recognition")}</summary>
       ${f(t("set.threshold"), sl("threshold", .3, .99, .01, c.threshold))}${f(t("set.scan"), sl("scan_interval", .1, 3, .1, c.scan_interval))}${f(t("set.delay"), sl("click_delay", 0, 10, .5, c.click_delay))}
       ${f(t("set.foreground"), tog("require_foreground", c.require_foreground))}${f(t("set.focus"), tog("auto_focus", c.auto_focus))}${f(t("set.treasure_auto_boost"), tog("treasure_auto_boost", c.treasure_auto_boost))}
        <h3 style="margin-top:18px">${t("set.movement")}</h3>
-       <button class="btn sm" data-page="afk">${t("afk.open_settings")}</button></div></div>`;
+       <button class="btn sm" data-page="afk">${t("afk.open_settings")}</button>
+       <button class="btn sm" data-page="templates">${t("nav.templates")}</button>
+       <button class="btn sm" data-page="tracker">${t("nav.tracker")}</button></details></div>`;
   },
   updates() {
     const u = ST.update, msg = {idle: "", need_url: t("upd.need_url"), checking: t("upd.checking"), downloading: t("upd.downloading"), installer_started:t("upd.installer_started"), ready:t("upd.ready"), latest: t("upd.latest", {v: u.version}),
@@ -426,39 +458,16 @@ const PAGE = {
       <div class="sub-remaining">—</div><p class="mute">${t("subs.remain_text")}</p>
       <p class="mute">${t("subs.notice_text")}</p></div>
     <h3>${t("subs.plans_title")}</h3>
-    <div class="grid g2 subs-grid">${(sub.plans || []).map(p => `<div class="card">
-      <div class="eyebrow">◇ EASY REWARDS</div><h3>${t(labels[p.id] || "subs.demo")}</h3>
+    <div class="grid g2 subs-grid">${(sub.plans || []).filter(p => p.id !== "demo").map(p => `<div class="card">
+      <h3>${t(labels[p.id] || "subs.demo")}</h3>
       <p class="mute">${p.id === "demo" ? t("subs.demo_note") : t("subs.access_note")}</p>
       <div class="row" style="justify-content:space-between"><b>${t("subs.price_unset")}</b>
-      <button type="button" class="btn sm" disabled>${t("subs.unavailable")}</button></div></div>`).join("")}</div>
-    <div class="card" style="margin-top:16px"><h3>${t("subs.payments")}</h3>
-      <p class="mute">${t("subs.payments_disabled")}</p><div class="row">
-      <button type="button" class="btn" disabled>${t("subs.card")}</button>
-      <button type="button" class="btn" disabled>${t("subs.sbp")}</button></div></div>
+      <button type="button" class="btn sm" data-plan="${esc(p.id)}">${controlUi("Выбрать", "Select", "Вибрати")}</button></div></div>`).join("")}</div>
     ${paymentHubMarkup()}${licensePreviewMarkup()}`;
   },
-  support() {
-    const links = ST.support_contacts || {};
+  notifications() {
     const discord = ST.discord_notifications || {};
-    return `<div class="grid g2" style="align-items:start">
-      <section class="card"><h3>${t("support.title")}</h3>
-        <p class="mute">${t("support.intro")}</p>
-        <div class="row" style="margin-top:14px">
-          <button class="btn pri" data-act="support_report">${t("support.create_report")}</button>
-          <button class="btn" data-act="support_open" data-channel="github" ${links.github ? "" : "disabled"}>${t("support.github")}</button>
-          <button class="btn" data-act="support_open" data-channel="telegram" ${links.telegram ? "" : "disabled"}>Telegram</button>
-          <button class="btn" data-act="support_open" data-channel="discord" ${links.discord ? "" : "disabled"}>Discord</button>
-        </div>
-        <p class="mute" style="margin-top:14px">${t("support.contacts_notice")}</p>
-        <p class="mute">${t("support.privacy")}</p>
-      </section>
-      <section class="card"><h3>${t("support.report")}</h3>
-        ${supportReport?.ok ? `<p class="mute">${t("support.saved")}: ${esc(supportReport.path)}</p>
-          <textarea id="support-preview" class="in" rows="12" readonly style="width:100%;min-height:220px;resize:vertical">${esc(supportReport.text)}</textarea>
-          <div class="row" style="margin-top:10px"><button class="btn pri" data-act="support_copy">${t("support.copy")}</button></div>`
-        : `<p class="mute">${t("support.empty")}</p>`}
-      </section>
-      <section class="card" style="grid-column:1/-1">
+    return `<section class="card launcher-panel">
         <h3>${t("discord.title")}</h3>
         <p class="mute">${t("discord.intro")}</p>
         <p class="mute">${discord.configured ? t("discord.configured") : t("discord.unconfigured")}</p>
@@ -480,7 +489,45 @@ const PAGE = {
         ${discord.last_sent ? `<p class="mute">${t("discord.last_sent")}: ${esc(discord.last_sent)}</p>` : ""}
         ${discord.last_error ? `<p class="warnbox">${esc(discord.last_error)}</p>` : ""}
         <p class="mute">${t("discord.privacy")}</p>
-      </section></div>`;
+      </section>`;
+  },
+  support() {
+    const links = ST.support_contacts || {};
+    return `<div class="grid g2" style="align-items:start">
+      <section class="card"><h3>${t("support.title")}</h3>
+        <p class="mute">${t("support.intro")}</p>
+        <div class="row" style="margin-top:14px">
+          <button class="btn pri" data-act="support_report">${t("support.create_report")}</button>
+        </div>
+        <div class="focus-line"><span>Fortnite</span><b data-live="launcher-game-status">${esc(launcherGameStatus())}</b></div>
+        <div class="focus-line"><span>${controlUi("Лаунчер", "Launcher", "Лаунчер")}</span><b data-live="launcher-engine-status">${esc(launcherEngineStatus())}</b></div>
+        <div class="focus-line"><span>${controlUi("Версия", "Version", "Версія")}</span><b>v${esc(ST.version)}</b></div>
+        <h3>${controlUi("Связаться", "Contact", "Зв’язатися")}</h3>
+        <div class="row">
+          ${[["telegram", "Telegram"], ["discord", "Discord"], ["github", t("support.github")]].filter(([channel]) => links[channel]).map(([channel, label]) =>
+            `<button class="btn" data-act="support_open" data-channel="${channel}">${esc(label)}</button>`).join("")}
+        </div>
+        <p class="mute">${t("support.privacy")}</p>
+      </section>
+      <section class="card"><h3>${t("support.report")}</h3>
+        ${supportReport?.ok ? `<p class="mute">${t("support.saved")}: ${esc(supportReport.path)}</p>
+          <textarea id="support-preview" class="in" aria-label="${esc(t("support.report"))}" rows="12" readonly style="width:100%;min-height:220px;resize:vertical">${esc(supportReport.text)}</textarea>
+          <div class="row" style="margin-top:10px"><button class="btn pri" data-act="support_copy">${t("support.copy")}</button></div>`
+        : `<p class="mute">${t("support.empty")}</p>`}
+      </section>
+      <section class="card launcher-faq">
+        <h3>${controlUi("Частые вопросы", "Frequently asked questions", "Поширені запитання")}</h3>
+        <details><summary>${controlUi("Почему Fortnite не найден?", "Why can’t the launcher find Fortnite?", "Чому Fortnite не знайдено?")}</summary>
+          <p>${controlUi("Открой Fortnite через Epic Games Launcher и дождись появления окна игры.", "Open Fortnite through Epic Games Launcher and wait for the game window.", "Відкрий Fortnite через Epic Games Launcher і дочекайся появи вікна гри.")}</p></details>
+        <details><summary>${controlUi("Что делать после Alt+Tab?", "What do I do after Alt+Tab?", "Що робити після Alt+Tab?")}</summary>
+          <p>${controlUi("Вернись в Fortnite и нажми клавишу продолжения из настроек.", "Return to Fortnite and press the resume key shown in Settings.", "Повернися до Fortnite й натисни клавішу продовження з налаштувань.")}</p></details>
+        <details><summary>${controlUi("Где проверить обновления?", "Where do I check for updates?", "Де перевірити оновлення?")}</summary>
+          <button class="btn sm" data-page="updates">${controlUi("Открыть новости", "Open News", "Відкрити новини")}</button></details>
+        <details><summary>${controlUi("Как оформить подписку?", "How do I subscribe?", "Як оформити підписку?")}</summary>
+          <p>${controlUi("В разделе «Подписка» можно выбрать тариф и сохранить локальный черновик. Оплата в этой сборке отключена.", "Choose a plan and save a local draft under Subscription. Payments are disabled in this build.", "У розділі «Підписка» можна вибрати тариф і зберегти локальну чернетку. Оплату в цій збірці вимкнено.")}</p>
+          <button class="btn sm" data-page="subscriptions">${controlUi("Открыть подписку", "Open Subscription", "Відкрити підписку")}</button></details>
+      </section>
+      </div>`;
   },
   guide() {
     const g = ST.guide, go = {1: ["templates", "guide.go"], 2: ["templates", "guide.go"], 3: ["templates", "guide.go"], 4: ["home", "guide.go"], 5: ["tracker", "guide.go"], 6: ["updates", "guide.go"]};
@@ -597,7 +644,10 @@ function bindShot() {
 async function patch(p) {
   const result = await api.set_config(p);
   await tick();
-  if (!result?.ok) render(true); // undo rejected selections, do not imply saved
+  if (!result?.ok) {
+    render(true);
+    toast(t("support.failed"));
+  }
   return result;
 }
 document.addEventListener("click", async ev => {
@@ -608,8 +658,8 @@ document.addEventListener("click", async ev => {
     catch (err) { toast("Не удалось управлять окном: " + String(err)); }
     return;
   }
-  const el = ev.target.closest("[data-page],[data-act],[data-ui],[data-theme],[data-tog],[data-cadd],[data-cdel],[data-ptog],[data-pdel],[data-flt],[data-tdel]");
-  if (!el) return; const d = el.dataset;
+  const el = ev.target.closest("[data-page],[data-act],[data-plan],[data-ui],[data-theme],[data-tog],[data-cadd],[data-cdel],[data-ptog],[data-pdel],[data-flt],[data-tdel]");
+  if (!el || el.disabled) return; const d = el.dataset;
   if (d.act && CONTROL_ACTIONS.has(d.act)) {
     // A pointerdown already sent the command. Keyboard-triggered clicks still work.
     if (lastPointerControl?.element === el && Date.now() - lastPointerControl.at < 2000) {
@@ -618,7 +668,13 @@ document.addEventListener("click", async ev => {
     }
     return runControlAction(d.act, d.target || "fortnite");
   }
-  if (d.page) { page = d.page; if (page === "templates") tplList = await api.templates(); return render(true); }
+  if (d.page && PAGES.some(([id]) => id === d.page)) { page = d.page; if (page === "templates") tplList = await api.templates(); return render(true); }
+  if (d.plan && ST.subscription?.plans?.some(plan => plan.id === d.plan && plan.id !== "demo")) {
+    payPlan = d.plan;
+    render(true);
+    $("#pay-plan")?.focus();
+    return;
+  }
   if (d.ui) return patch({ui_language: d.ui});
   if (d.theme) return patch({theme: d.theme});
   if (d.tog) return patch({[d.tog]: !ST.cfg[d.tog]});
@@ -671,13 +727,23 @@ document.addEventListener("click", async ev => {
     return render(true);
   }
   if (a === "support_report" || a === "afk_report") {
-    supportReport = await api.create_support_report();
+    el.disabled = true;
+    try {
+      supportReport = await api.create_support_report();
+    } catch {
+      supportReport = {ok: false};
+    } finally {
+      el.disabled = false;
+    }
     if (!supportReport.ok) {
       toast(t("support.failed") + ": " + String(supportReport.error || ""));
       return;
     }
     if (a === "afk_report") page = "support";
-    return render(true);
+    if (page !== "support") return;
+    render(true);
+    $("#support-preview")?.focus();
+    return;
   }
   if (a === "support_open") {
     const response = await api.open_support(d.channel);
