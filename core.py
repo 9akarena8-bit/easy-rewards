@@ -42,6 +42,10 @@ class Config:
     scales: list = field(default_factory=lambda: [1.0, 0.9, 1.1])
     require_foreground: bool = True  # only act while the game window is active
     auto_focus: bool = True          # try to bring the game window to front
+    # Configurable global start/stop/pause keys; F6 and F9 remain reserved.
+    hotkey_start: str = "F7"
+    hotkey_stop: str = "F8"
+    hotkey_pause: str = "F10"
     afk_enabled: bool = True
     afk_extra_enabled: bool = False  # opt in to jumps/clicks/item swaps
     afk_interval: float = 6.0       # seconds between anti-AFK presses
