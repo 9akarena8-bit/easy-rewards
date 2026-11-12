@@ -88,6 +88,11 @@ def test_shortcut_validation_prevents_collisions_and_reserved_keys(tmp_path):
     assert b.set_config({"afk_start_hotkey": "F6"}) == {"ok": False, "rejected": ["afk_start_hotkey"]}
     assert b.set_config({"afk_start_hotkey": "F12"}) == {"ok": False, "rejected": ["afk_start_hotkey"]}
     assert b.set_config({"afk_stop_hotkey": "Enter"}) == {"ok": False, "rejected": ["afk_stop_hotkey"]}
+    assert b.set_config({"afk_pause_hotkey": "f5"}) == {"ok": True, "rejected": []}
+    assert b.cfg.afk_pause_hotkey == "F5"
+    assert b.set_config({"afk_start_hotkey": "F5"}) == {"ok": False, "rejected": ["afk_start_hotkey"]}
+    assert b.set_config({"afk_pause_hotkey": "F3"}) == {"ok": False, "rejected": ["afk_pause_hotkey"]}
+    assert b.set_config({"afk_pause_hotkey": "F12"}) == {"ok": False, "rejected": ["afk_pause_hotkey"]}
     assert {"F1", "F5", "F7", "F8", "F11", "F12"} <= set(AFK_HOTKEY_CHOICES)
     assert all(k not in AFK_HOTKEY_CHOICES for k in ("F6", "F9", "F10"))
     assert Config.load(tmp_path / "config.json").afk_start_hotkey == "F3"
@@ -114,10 +119,12 @@ def test_beta_gui_contains_live_hotkeys_and_existing_controls():
     shell = (ROOT / "webapp.py").read_text(encoding="utf-8")
     assert 'hotkeyPicker("afk_start_hotkey"' in js
     assert 'hotkeyPicker("afk_stop_hotkey"' in js
+    assert 'hotkeyPicker("afk_pause_hotkey"' in js
     assert 'tog("afk_launch_game"' in js
     assert 'data-act="stop"' in js
     assert 'backend.cfg.afk_start_hotkey: backend.start' in shell
     assert 'backend.cfg.afk_stop_hotkey: backend.stop' in shell
+    assert 'backend.cfg.afk_pause_hotkey: backend.pause' in shell
     assert 'HotkeyPoller(hotkey_bindings)' in shell
     assert 'data-act="afk_report"' in js
     assert 'if (a === "support_report" || a === "afk_report")' in js
