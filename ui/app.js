@@ -256,6 +256,7 @@ const PAGE = {
         <button class="btn sm" data-act="focusgame" ${!ST.diagnostics?.game_found ? "disabled" : ""}>${t("afk.focus_button")}</button>
         <button class="btn sm pri" data-act="ptest" data-target="fortnite" ${e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_button")}</button>
         <button class="btn sm" data-act="ptest" data-target="notepad" ${e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_notepad")}</button>
+        <button class="btn sm" data-act="afk_report">${controlUi("Отчёт для тестирования", "Beta diagnostic report", "Звіт для тестування")}</button>
         <span class="mute">${t("afk.probe_help")}</span>
       </div>
       ${e.probe_status !== "idle" ? `<p class="mute">${t("afk.probe_status")}: ${esc(e.probe_target === "notepad" ? t("afk.probe_notepad_name") : "Fortnite")} — ${esc(t("afk.probe_" + e.probe_status))}
@@ -576,9 +577,13 @@ document.addEventListener("click", async ev => {
     await tick();
     return render(true);
   }
-  if (a === "support_report") {
+  if (a === "support_report" || a === "afk_report") {
     supportReport = await api.create_support_report();
-    if (!supportReport.ok) toast(t("support.failed") + ": " + String(supportReport.error || ""));
+    if (!supportReport.ok) {
+      toast(t("support.failed") + ": " + String(supportReport.error || ""));
+      return;
+    }
+    if (a === "afk_report") page = "support";
     return render(true);
   }
   if (a === "support_open") {
