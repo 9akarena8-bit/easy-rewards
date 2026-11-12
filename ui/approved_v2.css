@@ -95,3 +95,21 @@ body:not(.mini) .card{
   .afk-hotkey-grid{grid-template-columns:1fr}
   .gold-hero{background-position:64% center}
 }
+
+/* Alt+Tab auto-suspend indicator: distinct from manually pressed Pause. */
+.afk-auto-pause{
+  border:1px solid rgba(250,194,65,.42);
+  background:linear-gradient(90deg,rgba(255,198,67,.11),rgba(16,33,65,.3));
+  color:#f8dfa7;
+  border-radius:11px;
+  padding:10px 14px;
+  font-size:12px;
+  font-weight:650;
+  line-height:1.45;
+  margin:0 0 15px;
+}
+:root[data-theme=light] .afk-auto-pause{
+  color:#6c4814;
+  border-color:rgba(144,104,30,.4);
+  background:#fff5dd;
+}
