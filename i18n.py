@@ -941,3 +941,8 @@ STRINGS["uk"].update({
     "payments.draft_warning": "Це не рахунок і не замовлення продавцю. Нічого не надіслано, доступ не видано.",
     "payments.security": "Доступ надається лише після незалежної перевірки оплати чи обміну на сервері.",
 })
+
+# v1.4.0 — foreground-loss pause (all shipped UI languages).
+STRINGS["ru"]["log.afk_focus_paused"] = "Alt+Tab: анти-AFK приостановлен. Вернись в Fortnite и нажми F10."
+STRINGS["en"]["log.afk_focus_paused"] = "Alt+Tab: anti-AFK paused. Return to Fortnite and press F10."
+STRINGS["uk"]["log.afk_focus_paused"] = "Alt+Tab: анти-AFK призупинено. Повернися у Fortnite та натисни F10."
