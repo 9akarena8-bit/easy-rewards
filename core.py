@@ -65,19 +65,84 @@ class Config:
 
     @classmethod
     def load(cls, path: Path) -> "Config":
+        """Ignore invalid persisted settings rather than crashing the engine."""
         cfg = cls()
         try:
-            data = json.loads(Path(path).read_text(encoding="utf-8"))
-            names = {f.name for f in fields(cls)}
-            for k, v in data.items():
-                if k in names:
-                    setattr(cfg, k, v)
-        except (OSError, ValueError):
-            pass
+            data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError, UnicodeError):
+            return cfg
+        if not isinstance(data, dict):
+            return cfg
+        numeric = {
+            "threshold": (0.30, 0.99),
+            "scan_interval": (0.1, 5.0),
+            "click_delay": (0.0, 30.0),
+            "afk_interval": (1.0, 120.0),
+            "afk_hold": (0.1, 10.0),
+            "afk_pause_min": (0.2, 10.0),
+            "afk_pause_max": (0.2, 10.0),
+            "afk_camera_pixels_360": (100.0, 12000.0),
+        }
+        languages = {"ru", "en", "uk", "de", "fr", "es", "pt",
+                     "pl", "tr", "it", "ja", "ko", "zh", "ar"}
+        for f in fields(cls):
+            name = f.name
+            if name not in data:
+                continue
+            value = data[name]
+            default = getattr(cfg, name)
+            if name in numeric:
+                if (type(value) not in (int, float)
+                        or not numeric[name][0] <= value <= numeric[name][1]):
+                    continue
+                value = float(value)
+            elif isinstance(default, bool):
+                if type(value) is not bool:
+                    continue
+            elif name == "scales":
+                if (not isinstance(value, list) or not 1 <= len(value) <= 8
+                        or any(type(v) not in (int, float) or not 0.5 <= v <= 2.0 for v in value)):
+                    continue
+                value = [float(v) for v in value]
+            elif name == "afk_keys":
+                if not isinstance(value, str) or not value or len(value) > 4 or any(k not in "wasd" for k in value):
+                    continue
+            elif name in ("language", "ui_language"):
+                if not isinstance(value, str) or value not in (languages if name == "language" else {"ru", "en", "uk"}):
+                    continue
+            elif name == "theme":
+                if value not in ("dark", "light"):
+                    continue
+            elif name == "update_url":
+                if not isinstance(value, str) or len(value) > 2048 or (value and not value.startswith("https://")):
+                    continue
+            elif type(value) is not type(default):
+                continue
+            setattr(cfg, name, value)
+        if cfg.afk_pause_min > cfg.afk_pause_max:
+            cfg.afk_pause_min, cfg.afk_pause_max = cls().afk_pause_min, cls().afk_pause_max
         return cfg
 
     def save(self, path: Path) -> None:
-        Path(path).write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
+        """Write to a temporary file first; never leave half-written JSON."""
+        import os
+        import tempfile
+        destination = Path(path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=str(destination.parent),
+                prefix=destination.name + ".", suffix=".tmp", delete=False
+            ) as fp:
+                temporary = Path(fp.name)
+                json.dump(asdict(self), fp, indent=2)
+                fp.flush()
+                os.fsync(fp.fileno())
+            os.replace(temporary, destination)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 # ------------------------------------------------------------- templates
