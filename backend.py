@@ -288,13 +288,15 @@ class Backend:
                     return {"ok": False, "reason": "epic_launch_error", "detail": str(exc)[:180]}
                 self.engine.start()
                 return {"ok": True, "reason": "launch_requested"}
-        # Test IO adapters and disabled auto-launch continue to work without Epic.
-        self.engine.start()
+        # Focus the already-running game BEFORE starting the worker. This
+        # removes a race where a quick Alt+Tab occurs after window activation
+        # but before the engine has seen Fortnite once.
         if self.cfg.auto_focus and getattr(self.io, "game_window_found", lambda: False)():
             try:
                 self.io.focus_game()
             except (OSError, RuntimeError):
                 pass
+        self.engine.start()
         return {"ok": True, "reason": "started"}
 
     def input_probe_delayed(self, target: str = "fortnite") -> dict:
