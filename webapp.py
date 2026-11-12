@@ -96,13 +96,18 @@ def main() -> int:
     hooks.save_dialog = save_dialog
     hooks.open_dialog = open_dialog
 
-    winio.HotkeyPoller({
-        "F6": backend.engine.input_probe,
-        "F7": backend.start,
-        "F8": backend.stop,
-        "F9": backend.hotkey_count,
-        "F10": backend.pause,
-    }).start()
+    # Settings can change at runtime; the polling thread reads the current
+    # mapping each pass. F6/F9/F10 are reserved diagnostic/counter/pause keys.
+    def hotkey_bindings():
+        return {
+            "F6": backend.engine.input_probe,
+            "F9": backend.hotkey_count,
+            "F10": backend.pause,
+            backend.cfg.afk_start_hotkey: backend.start,
+            backend.cfg.afk_stop_hotkey: backend.stop,
+        }
+
+    winio.HotkeyPoller(hotkey_bindings).start()
 
     update_shutdown = threading.Event()
 
