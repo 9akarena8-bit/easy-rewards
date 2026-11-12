@@ -115,6 +115,14 @@ class Backend:
         self._start_pending = False
         self._start_phase = "idle"
         self._start_error = ""
+        # Window enumeration can block under Windows. Never run it synchronously
+        # from pywebview's 800 ms state polling path.
+        self._game_lookup_lock = threading.Lock()
+        self._game_lookup_pending = False
+        self._game_lookup_known = False
+        self._game_lookup_last_at = 0.0
+        self._game_lookup_value = False
+        self._game_lookup_error = ""
         self.reward_stats = RewardStats(self.base / "rewards.json")
         self.payment_drafts = payment_hub.LocalInterestDrafts(self.base / "payment_interest_drafts.json")
         # Opt-in integration preview only; unset in production until the
@@ -309,6 +317,37 @@ class Backend:
         self._tr_active = trs["active"]
         return trs
 
+    def _game_window_found_cached(self) -> bool:
+        """Return latest observation instantly; refresh OS window search in background."""
+        now = time.monotonic()
+        start_lookup = False
+        with self._game_lookup_lock:
+            if (not self._game_lookup_pending and
+                    (not self._game_lookup_known or
+                     now - self._game_lookup_last_at >= 1.0)):
+                self._game_lookup_pending = True
+                self._game_lookup_last_at = now
+                start_lookup = True
+            last_found = self._game_lookup_value
+        if start_lookup:
+            threading.Thread(target=self._refresh_game_window_found,
+                             name="game-lookup", daemon=True).start()
+        return last_found
+
+    def _refresh_game_window_found(self) -> None:
+        """At most one potentially slow Win32 search runs concurrently."""
+        try:
+            found = bool(getattr(self.io, "game_window_found", lambda: False)())
+            error = ""
+        except Exception as exc:
+            found = False
+            error = type(exc).__name__
+        with self._game_lookup_lock:
+            self._game_lookup_value = found
+            self._game_lookup_error = error
+            self._game_lookup_known = True
+            self._game_lookup_pending = False
+
     def state(self) -> dict:
         e = self.engine
         counts = self._template_counts()
@@ -349,7 +388,10 @@ class Backend:
             "diagnostics": {
                 "foreground_title": (self.io.foreground_title() if hasattr(self.io, "foreground_title") else ""),
                 "game_active": bool(self.io.game_in_foreground()),
-                "game_found": bool(self.io.game_window_found()) if hasattr(self.io, "game_window_found") else False,
+                "game_found": self._game_window_found_cached(),
+                "game_lookup_pending": self._game_lookup_pending,
+                "game_lookup_known": self._game_lookup_known,
+                "game_lookup_error": self._game_lookup_error,
                 "foreground_process": (self.io.foreground_process() if hasattr(self.io, "foreground_process") else ""),
                 "game_title": str(getattr(self.io, "window_title", "Fortnite")),
                 "template_count": len(e.templates),
