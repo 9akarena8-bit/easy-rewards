@@ -26,8 +26,10 @@ This is an **unofficial** community utility, not affiliated with Epic Games or F
 7. Press the configured Stop key with the launcher minimized. Confirm engine status is Stopped. Restart and press F12: emergency Stop must work even after rebinding.
 8. Repeat with Start/Stop buttons in the app. Try Pause and inspect the diagnostics panel.
 9. Verify that settings are kept after closing and reopening the app.
-10. Report Windows version, app version, reproduction steps, screenshot, and diagnostics
-    with personal details/credentials removed.
+10. On the Anti-AFK page, click **Отчёт для тестирования**. The launcher opens
+    Support and prepares a local text report for review and copying.
+11. Report Windows version, app version, reproduction steps, screenshot, and diagnostics
+    with personal details/credentials removed. No diagnostics are uploaded automatically.
 
 ## Important limitations
 - Fortnite and Epic Games do **not** approve third-party gameplay automation. Using this
