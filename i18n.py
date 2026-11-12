@@ -1010,3 +1010,22 @@ STRINGS["uk"].update({
     "log.lobby_clicked": "Лобі: натиснуто {name} (точність {score})",
     "log.lobby_match_confirmed": "Вхід у матч підтверджено HUD",
 })
+
+STRINGS["ru"].update({
+    "state.lobby_wait": "Ожидание лобби/матча",
+    "state.lobby_button": "Проверка кнопки лобби",
+    "state.lobby_loading": "Загрузка после кнопки лобби",
+    "state.lobby_attention": "Лобби: требуется проверка",
+})
+STRINGS["en"].update({
+    "state.lobby_wait": "Waiting for lobby/match",
+    "state.lobby_button": "Validating lobby button",
+    "state.lobby_loading": "Loading after lobby action",
+    "state.lobby_attention": "Lobby needs attention",
+})
+STRINGS["uk"].update({
+    "state.lobby_wait": "Очікування лобі/матчу",
+    "state.lobby_button": "Перевірка кнопки лобі",
+    "state.lobby_loading": "Завантаження після кнопки лобі",
+    "state.lobby_attention": "Лобі: потрібна перевірка",
+})
