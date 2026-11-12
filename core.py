@@ -192,7 +192,9 @@ class Engine:
         # A single daemon analysis job can outlive a stop, but it never sends inputs.
         self._screen_job: dict | None = None
         self._screen_epoch = 0
-        self._next_focus_attempt = 0.0
+        # Track Alt+Tab without changing the manual Pause state.
+        self._focus_suspended = False
+        self._focus_suspended_at = 0.0
         self.focus_result = ""
         self._restart_pending = False
         self.replay_count = 0
@@ -221,6 +223,10 @@ class Engine:
     @property
     def paused(self) -> bool:
         return self._paused.is_set()
+
+    @property
+    def focus_suspended(self) -> bool:
+        return self._focus_suspended and self.running and not self.paused
 
     @property
     def runtime(self) -> float:
@@ -270,7 +276,8 @@ class Engine:
         self._death_latched = False
         self.replay_attempts = 0
         self.replay_status = "idle"
-        self._next_focus_attempt = 0.0
+        self._focus_suspended = False
+        self._focus_suspended_at = 0.0
         self.focus_result = ""
         self._restart_pending = False
         self._thread = threading.Thread(target=self._loop, name="engine", daemon=True)
@@ -731,22 +738,27 @@ class Engine:
         cfg = self.cfg
         foreground_required = cfg.require_foreground or cfg.afk_sequence_enabled
         if foreground_required and not self.io.game_in_foreground():
-            now = time.monotonic()
-            # Do not constantly steal focus while the user is in the launcher.
-            if cfg.auto_focus and now >= self._next_focus_attempt and not self._stop.is_set():
-                self._next_focus_attempt = now + 7.0
-                try:
-                    result = self.io.focus_game()
-                    self.focus_result = "focused" if self.io.game_in_foreground() else "denied"
-                except Exception as exc:
-                    self.focus_result = "error: " + str(exc)
-                self._stop.wait(.08)
-            if not self.io.game_in_foreground():
-                found = self.io.game_window_found() if hasattr(self.io, "game_window_found") else False
-                self.wait_reason = "not_foreground" if found else "not_found"
-                self.state = "waiting_window"
-                self.score = 0.0
-                return
+            # Auto-suspend on Alt+Tab; never steal focus from other apps.
+            if not self._focus_suspended:
+                self._focus_suspended = True
+                self._focus_suspended_at = time.monotonic()
+                self._screen_epoch += 1  # invalidate pre-Alt+Tab frame
+                self._replay_candidate_hits = 0
+                self._replay_candidate_pos = None
+                self.log("log.focus_suspended")
+            found = self.io.game_window_found() if hasattr(self.io, "game_window_found") else False
+            self.wait_reason = "not_foreground" if found else "not_found"
+            self.state = "waiting_window"
+            self.score = 0.0
+            return
+        if self._focus_suspended:
+            self._focus_suspended = False
+            self._screen_epoch += 1
+            # Let Fortnite settle before sending another movement on return.
+            self._next_afk = max(self._next_afk, time.monotonic() + .65)
+            self._replay_candidate_hits = 0
+            self._replay_candidate_pos = None
+            self.log("log.focus_resumed")
         self.wait_reason = ""
         has_templates = bool(self.templates)
         scan_yellow = bool(cfg.afk_enabled and cfg.afk_replay_auto_detect)
