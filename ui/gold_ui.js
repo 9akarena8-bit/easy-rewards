@@ -38,48 +38,137 @@
       ? ui("Подписка активна", "Subscription active", "Підписка активна")
       : ui("Подписка ещё не активна", "Subscription not active yet", "Підписка ще не активна");
   };
+  // Display only release facts, never marketing placeholders or invented patch notes.
   const newsItems = () => {
-    const items = [];
-    // Release notes come from official GitHub Releases, not a manually updated list.
-    const published = Array.isArray(ST.release_news) ? ST.release_news : [];
-    for (const r of published.slice(0, 7)) {
-      items.push({kind:"new", icon:"✦", label:ui("Релиз " + r.version, "Release " + r.version, "Реліз " + r.version),
-        title:r.title || `Easy Rewards v${r.version}`,
-        body:r.notes || ui("Опубликовано обновление программы.", "An application update is available.", "Доступне оновлення програми.")});
+    const releases = Array.isArray(ST.release_news) ? ST.release_news : [];
+    const unique = new Map();
+    for (const r of releases) {
+      if (!r || typeof r !== "object") continue;
+      const version = String(r.version || "");
+      if (!/^\d+\.\d+\.\d+(?:-beta)?$/.test(version)) continue;
+      const key = version.replace(/-beta$/, "");
+      if (unique.has(key)) continue; // the bundled beta has richer offline notes
+      const notes = String(r.notes || "").trim();
+      unique.set(key, {
+        version, title: String(r.title || ("Fortnite Pirate Token v" + version)),
+        notes, date: String(r.published_at || r.date || ""),
+        beta: version.endsWith("-beta")
+      });
     }
-    const u = ST.update || {};
-    if (["available", "downloading", "ready"].includes(u.status)) {
-      items.push({kind:"new", icon:"↓", label:ui("Доступно обновление", "Update available", "Доступне оновлення"),
-        title:ui(`Новая версия ${u.version || ""}`, `New version ${u.version || ""}`, `Нова версія ${u.version || ""}`),
-        body:u.notes || ui("Перейди в раздел новостей, чтобы установить обновление.", "Open News to install the update.", "Відкрий Новини, щоб встановити оновлення.")});
-    }
-    if (!published.some(r => r.version === "1.3.3")) items.push({kind:"repair",icon:"✦",label:ui("Версия 1.3.3", "Version 1.3.3", "Версія 1.3.3"),
-      title:ui("Исправления анти-AFK и новый лаунчер", "Anti-AFK fixes and new launcher", "Виправлення анти-AFK та новий лаунчер"),
-      body:ui("Диагностика ввода, улучшенная остановка движка и обновлённый золотой интерфейс.",
-              "Input diagnostics, more reliable engine stopping and a refreshed gold interface.",
-              "Діагностика вводу, покращена зупинка рушія та оновлений золотий інтерфейс.")});
-    if (!published.some(r => r.version === "1.3.2")) items.push({kind:"version",icon:"✧",label:ui("Версия 1.3.2", "Version 1.3.2", "Версія 1.3.2"),
-      title:ui("Улучшена система обновлений", "Improved update system", "Покращено систему оновлень"),
-      body:ui("Проверка GitHub Releases и загрузка установщика с проверкой SHA-256.", "GitHub Releases checks and verified installer download.", "Перевірка GitHub Releases та завантаження перевіреного інсталятора.")});
-    if (!published.some(r => r.version === "1.3.0")) items.push({kind:"afk",icon:"↝",label:ui("Версия 1.3.0", "Version 1.3.0", "Версія 1.3.0"),
-      title:ui("Расширенные настройки анти-AFK", "Expanded anti-AFK controls", "Розширені налаштування анти-AFK"),
-      body:ui("Параметры движений, камеры, пауз и горячих клавиш.", "Movement, camera, pauses and hotkey controls.", "Налаштування рухів, камери, пауз та гарячих клавіш.")});
-    items.push({kind:"subs",icon:"♛",label:ui("В разработке", "In development", "У розробці"),
-      title:ui("Подписка и оплата картой/СБП", "Subscription and card/SBP payments", "Підписка та оплата карткою/СБП"),
-      body:ui("Сейчас доступен только предпросмотр. Покупки и активация отключены.", "Preview only. Purchases and activation are disabled.", "Лише попередній перегляд. Оплата та активація вимкнені.")});
-    return items;
+    return [...unique.values()].sort((a, b) => {
+      const left = a.version.match(/\d+/g).slice(0, 3).map(Number);
+      const right = b.version.match(/\d+/g).slice(0, 3).map(Number);
+      for (let i = 0; i < 3; ++i) if (left[i] !== right[i]) return right[i] - left[i];
+      return 0;
+    });
   };
+  const releaseDate = value => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const lang = ({en:"en-GB",uk:"uk-UA"})[ST?.cfg?.ui_language] || "ru-RU";
+    return new Intl.DateTimeFormat(lang, {day:"numeric",month:"long",year:"numeric"}).format(date);
+  };
+  const newsIcon = index => ["⚙", "🔧", "⌘", "🛠", "</>", "⚙"][index % 6];
   const newsMarkup = (full = false) => {
-    const items = newsItems().slice(0, full ? 6 : 3);
-    return `<section class="card gold-news ${full ? "gold-news-full" : ""}">
-      <div class="gold-section-head"><div><span class="gold-overline">${ui("ЛЕНТА ОБНОВЛЕНИЙ", "UPDATE FEED", "СТРІЧКА ОНОВЛЕНЬ")}</span>
-      <h2>${ui("Новости", "News", "Новини")}</h2></div>
-      ${full ? "" : `<button class="gold-text-link" data-page="updates">${ui("Все новости", "All news", "Усі новини")} <span>↗</span></button>`}</div>
-      <div class="gold-news-list">${items.map(item => `<div class="gold-news-item">
-        <div class="gold-news-icon news-${item.kind}" aria-hidden="true">${item.icon}</div><div class="gold-news-copy">
-        <span class="gold-mini-tag">${safe(item.label)}</span><h3>${safe(item.title)}</h3>
-        <p>${safe(item.body).slice(0, full ? 600 : 160)}</p></div></div>`).join("")}</div></section>`;
+    const all = newsItems();
+    const items = full ? all : all.slice(0, 3);
+    const headline = ui("Новости и обновления", "News and updates", "Новини й оновлення");
+    const noNews = ui("Пока нет доступных патчей. Попробуй проверить обновления позже.",
+      "No published patches are available. Check again later.",
+      "Опублікованих оновлень поки немає. Перевірте пізніше.");
+    const card = (item, index) => '<button type="button" class="gold-patch-row" data-news-open="' + index + '">' +
+      '<span class="gold-patch-thumb" aria-hidden="true">' + safe(newsIcon(index)) + '</span>' +
+      '<span class="gold-patch-row-text"><span class="gold-mini-tag">' +
+      (item.beta ? ui("Бета", "Beta", "Бета") : ui("Обновление", "Update", "Оновлення")) +
+      ' · v' + safe(item.version) + '</span><strong>' + safe(item.title) + '</strong>' +
+      '<small>' + safe(item.notes).slice(0, full ? 230 : 125) + '</small></span>' +
+      (releaseDate(item.date) ? '<time>' + safe(releaseDate(item.date)) + '</time>' : '') +
+      '<span class="gold-patch-arrow" aria-hidden="true">›</span></button>';
+    return '<section class="card gold-news ' + (full ? "gold-news-full gold-news-archive" : "") + '">' +
+      '<div class="gold-section-head"><div><span class="gold-overline">' +
+      ui("ИСТОРИЯ ПАТЧЕЙ", "PATCH HISTORY", "ІСТОРІЯ ОНОВЛЕНЬ") +
+      '</span><h2>' + headline + '</h2></div>' +
+      (full ? '' : '<button class="gold-text-link" data-page="updates">' + ui("Все новости", "All news", "Усі новини") + ' →</button>') +
+      '</div>' +
+      (full && all.length ? '<button type="button" class="gold-patch-feature" data-news-open="0">' +
+        '<span class="gold-overline">' + ui("ПОСЛЕДНЕЕ ОБНОВЛЕНИЕ", "LATEST RELEASE", "ОСТАННЄ ОНОВЛЕННЯ") + '</span>' +
+        '<strong>' + safe(all[0].title) + '</strong><span>' +
+        safe(all[0].notes).slice(0, 240) + '</span><b>' + ui("Читать патч", "Read patch", "Читати зміни") + ' →</b></button>' : '') +
+      (items.length ? '<div class="gold-patch-list">' + items.map(card).join("") + '</div>'
+        : '<p class="gold-patch-empty">' + noNews + '</p>') + '</section>';
   };
+  // Treat notes as UNTRUSTED plain text/Markdown, never as HTML.
+  const patchNotesHtml = value => {
+    const text = String(value || "").slice(0, 12000);
+    if (!text.trim()) return '<p>' + ui("Описание обновления пока не опубликовано.",
+      "Release notes are not available.", "Опис оновлення поки не опубліковано.") + '</p>';
+    const lines = text.split(/\r?\n/);
+    return lines.map(raw => {
+      const line = raw.trim().replace(/\*\*/g, "");
+      if (!line) return "";
+      const h = line.match(/^#{1,5}\s+(.+)$/);
+      if (h) return "<h3>" + safe(h[1]) + "</h3>";
+      const bullet = line.match(/^(?:[-*+]|\d+[.)])\s+(.+)$/);
+      if (bullet) return '<p class="gold-patch-bullet"><span aria-hidden="true">•</span>' + safe(bullet[1]) + "</p>";
+      return "<p>" + safe(line) + "</p>";
+    }).join("");
+  };
+  let patchOverlay = null, patchOpener = null;
+  function closePatch() {
+    if (!patchOverlay) return;
+    patchOverlay.remove();
+    patchOverlay = null;
+    document.documentElement.classList.remove("gold-patch-is-open");
+    if (patchOpener?.isConnected) patchOpener.focus();
+    patchOpener = null;
+  }
+  function openPatch(index, opener) {
+    const item = newsItems()[index];
+    if (!item || MINI) return;
+    closePatch();
+    patchOpener = opener;
+    patchOverlay = document.createElement("div");
+    patchOverlay.className = "gold-patch-overlay";
+    const back = ui("К новостям", "Back to news", "До новин");
+    patchOverlay.innerHTML = '<article class="gold-patch-dialog" role="dialog" aria-modal="true" aria-labelledby="gold-patch-title" tabindex="-1">' +
+      '<header class="gold-patch-dialog-head"><button type="button" class="gold-patch-back" data-news-close="1">← ' + back +
+      '</button><button type="button" class="gold-patch-close" data-news-close="1" aria-label="' +
+      ui("Закрыть", "Close", "Закрити") + '">×</button></header>' +
+      '<div class="gold-patch-body"><div class="gold-patch-banner"><span class="gold-mini-tag">' +
+      ui("ИСТОРИЯ ОБНОВЛЕНИЙ", "RELEASE HISTORY", "ІСТОРІЯ ОНОВЛЕНЬ") + '</span>' +
+      '<h2 id="gold-patch-title">' + safe(item.title) + '</h2><p>v' + safe(item.version) +
+      (releaseDate(item.date) ? ' · ' + safe(releaseDate(item.date)) : '') + '</p></div>' +
+      '<div class="gold-patch-copy">' + patchNotesHtml(item.notes) + '</div></div></article>';
+    document.body.appendChild(patchOverlay);
+    document.documentElement.classList.add("gold-patch-is-open");
+    patchOverlay.querySelector(".gold-patch-dialog").focus();
+  }
+  document.addEventListener("click", ev => {
+    if (patchOverlay) {
+      if (ev.target === patchOverlay || ev.target.closest("[data-news-close]")) {
+        ev.preventDefault(); ev.stopImmediatePropagation(); closePatch(); return;
+      }
+      if (patchOverlay.contains(ev.target)) {
+        ev.stopImmediatePropagation(); return;
+      }
+    }
+    const open = ev.target.closest("[data-news-open]");
+    if (open) {
+      ev.preventDefault(); ev.stopImmediatePropagation();
+      openPatch(Number(open.dataset.newsOpen), open);
+    }
+  }, true);
+  document.addEventListener("keydown", ev => {
+    if (!patchOverlay) return;
+    if (ev.key === "Escape") { ev.preventDefault(); ev.stopImmediatePropagation(); closePatch(); return; }
+    if (ev.key !== "Tab") return;
+    const controls = Array.from(patchOverlay.querySelectorAll("button:not([disabled])"));
+    const first = controls[0], last = controls[controls.length - 1];
+    if (!first || !last) return;
+    if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+    else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+  }, true);
   const subCard = () => `<button type="button" class="card gold-sub-card" data-page="subscriptions">
       <span class="gold-overline">${ui("ТВОЙ ДОСТУП", "YOUR ACCESS", "ТВІЙ ДОСТУП")}</span>
       <span class="gold-crown">♛</span><strong>${ui("Подписка", "Subscription", "Підписка")}</strong>

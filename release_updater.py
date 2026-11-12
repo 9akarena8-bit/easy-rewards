@@ -150,7 +150,7 @@ def download_installer(meta: dict, directory: Path | None = None) -> Path:
 
 
 def release_news(limit: int = 7) -> list[dict]:
-    """Fetch recent published GitHub release notes for the built-in news feed.
+    """Fetch recent published GitHub release notes, including beta patches.
 
     No HTML or executable code from the release is trusted. The UI escapes text.
     """
@@ -160,7 +160,7 @@ def release_news(limit: int = 7) -> list[dict]:
         raise ValueError("Invalid release feed")
     items = []
     for rel in data:
-        if not isinstance(rel, dict) or rel.get("draft") or rel.get("prerelease"):
+        if not isinstance(rel, dict) or rel.get("draft"):
             continue
         version = str(rel.get("tag_name") or "").removeprefix("v")
         if not re.fullmatch(r"\d+\.\d+\.\d+", version):
@@ -169,8 +169,10 @@ def release_news(limit: int = 7) -> list[dict]:
         # GitHub auto-generated notes can include verbose markdown and links.
         # Show the latest excerpt; no marketing claims about new features.
         items.append({"version": version,
-                      "title": f"Easy Rewards v{version}",
-                      "notes": notes[:380] or "Опубликована новая версия Easy Rewards."})
+                      "title": f"Fortnite Pirate Token v{version}" + (" Beta" if rel.get("prerelease") else ""),
+                      "published_at": str(rel.get("published_at") or ""),
+                      "prerelease": bool(rel.get("prerelease")),
+                      "notes": notes[:12000] or "Опубликована новая версия Fortnite Pirate Token."})
     return items
 
 
