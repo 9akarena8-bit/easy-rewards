@@ -42,6 +42,7 @@ class Config:
     scales: list = field(default_factory=lambda: [1.0, 0.9, 1.1])
     require_foreground: bool = True  # only act while the game window is active
     auto_focus: bool = True          # try to bring the game window to front
+    auto_launch_game: bool = True    # request Epic Launcher to start Fortnite if not running
     # Configurable global start/stop/pause keys; F6 and F9 remain reserved.
     hotkey_start: str = "F7"
     hotkey_stop: str = "F8"
