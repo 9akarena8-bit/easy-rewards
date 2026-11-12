@@ -38,6 +38,8 @@ def main():
             path = urlsplit(self.path).path
             if path in ('/', '/index.html'):
                 return self.reply(PAGE.read_bytes(), kind='text/html; charset=utf-8')
+            if path == '/demo_checkout.js':
+                return self.reply((ROOT / 'demo_checkout.js').read_bytes(), kind='application/javascript; charset=utf-8')
             if path == '/api/recent':
                 return self.reply(json.dumps({'orders': ledger.recent(10), 'demo': True}, ensure_ascii=False).encode())
             return self.reply(b'{"error":"not_found"}', 404)
