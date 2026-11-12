@@ -265,7 +265,7 @@ class Backend:
         if self.engine.running:
             self.engine.start()  # existing resume / queued-restart semantics
             return {"ok": True, "reason": "already_running"}
-        if self.cfg.afk_launch_game and not self.io.game_window_found():
+        if self.cfg.afk_launch_game and not getattr(self.io, "game_window_found", lambda: False)():
             launcher = getattr(self.io, "launch_game", None)
             if callable(launcher):
                 try:
@@ -277,7 +277,7 @@ class Backend:
                 return {"ok": True, "reason": "launch_requested"}
         # Test IO adapters and disabled auto-launch continue to work without Epic.
         self.engine.start()
-        if self.cfg.auto_focus and self.io.game_window_found():
+        if self.cfg.auto_focus and getattr(self.io, "game_window_found", lambda: False)():
             try:
                 self.io.focus_game()
             except (OSError, RuntimeError):
