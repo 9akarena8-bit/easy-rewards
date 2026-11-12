@@ -377,7 +377,12 @@ class Engine:
         if thread is threading.current_thread():
             return
         thread.join(timeout=0.35)
-        # _loop's finally clause marks the engine stopped and logs exactly once.
+        # The worker may finish between the initial is_alive() check and our
+        # "stopping" assignment. In that race it has already set "stopped",
+        # and the controller must not leave the stale "stopping" label.
+        if not thread.is_alive():
+            self.state = "stopped"
+        # _loop's finally clause still owns the single stopped log entry.
 
     def _pause_for_focus_loss(self) -> None:
         """Latch a focus-loss pause without stopping the worker.
