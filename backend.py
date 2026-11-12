@@ -82,6 +82,16 @@ class Backend:
         self.cfg_path = self.base / "config.json"
         self.templates_root = self.base / "templates"
         self.cfg = Config.load(self.cfg_path)
+        # Never let a malformed/old config disable emergency Stop or bind
+        # reserved F12 as Start. Settings can also be edited outside the UI.
+        start_key = str(self.cfg.afk_start_hotkey).upper()
+        stop_key = str(self.cfg.afk_stop_hotkey).upper()
+        if start_key not in AFK_HOTKEY_CHOICES or start_key == "F12":
+            start_key = "F7"
+        if stop_key not in AFK_HOTKEY_CHOICES or stop_key == start_key:
+            stop_key = "F8" if start_key != "F8" else "F12"
+        self.cfg.afk_start_hotkey = start_key
+        self.cfg.afk_stop_hotkey = stop_key
         self.tracker = Tracker(self.base / "tracker.json")
         self._log: collections.deque = collections.deque(maxlen=80)
         self._log_n = 0
@@ -346,7 +356,9 @@ class Backend:
                     key = str(v).strip().upper()
                     other = ("afk_stop_hotkey" if k == "afk_start_hotkey"
                              else "afk_start_hotkey")
-                    if key not in AFK_HOTKEY_CHOICES or key == getattr(self.cfg, other):
+                    if (key not in AFK_HOTKEY_CHOICES or
+                            (k == "afk_start_hotkey" and key == "F12") or
+                            key == getattr(self.cfg, other)):
                         raise ValueError(k)
                     setattr(self.cfg, k, key)
                 elif k == "afk_keys":
