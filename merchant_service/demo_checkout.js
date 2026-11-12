@@ -1,0 +1,17 @@
+'use strict';
+const names = {day:'1 день',three_days:'3 дня',week:'7 дней',month:'30 дней'};
+const methods = {card:'Карта',sbp:'СБП',qr:'QR-код',bank_transfer:'Перевод',steam_items:'Скины Steam'};
+const hints = {card:'Реальные карты обрабатываются только платёжным провайдером. Номера карт программа не запрашивает.',sbp:'В боевой версии СБП-ссылка выдаётся провайдером под конкретный заказ, подтверждение — только от сервера.',qr:'Показываем динамический QR, выпущенный провайдером, только когда появится реальная интеграция.',bank_transfer:'Зачисление проверяется по выписке продавца, не по скриншоту покупателя. Реквизитов в демо нет.',steam_items:'В демо можно оценить корзину, но она не подключена к Steam. До продажи нужна проверка обмена и ограничений.'};
+let plan='day',method='card',basket=[];
+function select(group,field,value){document.querySelectorAll('#'+group+' .choice').forEach(n=>n.classList.toggle('on',n.dataset[field]===value));}
+document.getElementById('plans').addEventListener('click', e=>{const b=e.target.closest('[data-plan]');if(!b)return;plan=b.dataset.plan;select('plans','plan',plan);document.getElementById('chosen-plan').textContent=names[plan];});
+document.getElementById('methods').addEventListener('click', e=>{const b=e.target.closest('[data-method]');if(!b)return;method=b.dataset.method;select('methods','method',method);document.getElementById('chosen-method').textContent=methods[method];document.getElementById('method-hint').textContent=hints[method];document.getElementById('skins').hidden=method!=='steam_items';});
+function renderBasket(){const el=document.getElementById('basket');el.textContent=basket.length?'Позиции: '+basket.map(x=>x.name+' — '+(x.estimate_kopeks/100).toLocaleString('ru-RU')+' ₽').join('; '):'Корзина пуста';}
+document.getElementById('addskin').addEventListener('click',()=>{const name=document.getElementById('skinname').value.trim();const amount=Number(document.getElementById('skinprice').value);if(!name||name.length>100||!Number.isFinite(amount)||amount<=0||amount>1000000||basket.length>=16){alert('Укажи название и примерную стоимость. Максимум 16 позиций.');return;}basket.push({name,estimate_kopeks:Math.round(amount*100)});document.getElementById('skinname').value='';document.getElementById('skinprice').value='';renderBasket();});
+document.getElementById('game').addEventListener('change',()=>{basket=[];renderBasket();});
+document.getElementById('create').addEventListener('click',async()=>{
+ const btn=document.getElementById('create');btn.disabled=true;
+ try{const response=await fetch('/api/demo-order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan,method,game:method==='steam_items'?document.getElementById('game').value:'',basket:method==='steam_items'?basket:[]})});const order=await response.json();if(!response.ok)throw Error(order.error||'Ошибка сохранения');const box=document.getElementById('order');box.replaceChildren();const info=document.createElement('div');info.textContent='Демо-заявка создана. Ни деньги, ни скины не переданы.';const number=document.createElement('div');number.className='order-id';number.textContent=order.order_id;const status=document.createElement('div');status.textContent='Статус: '+order.status+' · Подписка не активирована';box.append(info,number,status);
+ }catch(e){alert('Ошибка: '+e.message);}finally{btn.disabled=false;}
+});
+renderBasket();
