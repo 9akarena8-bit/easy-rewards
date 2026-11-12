@@ -1,0 +1,5 @@
+.env
+private/
+installer/
+__pycache__/
+.pytest_cache/
