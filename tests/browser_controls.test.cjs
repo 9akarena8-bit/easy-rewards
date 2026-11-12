@@ -12,6 +12,7 @@ const goldSource = fs.readFileSync(path.join(__dirname, "..", "ui", "gold_ui.js"
 function createBrowser() {
   const events = {};
   let writes = 0, visiblePage = null, calls = 0;
+  const nodes = {};
   const main = {
     set innerHTML(value) {
       writes++;
@@ -29,7 +30,7 @@ function createBrowser() {
       }
       return null;
     },
-    querySelectorAll() {return [];},
+    querySelectorAll(selector) {return nodes[selector] || [];},
     getElementById() {return {id: "running-interface"};},
     createElement() {return {className:"",textContent:"",remove() {}};}
   };
@@ -56,10 +57,34 @@ function createBrowser() {
     PAGE.afk = () => '<button data-act="stop">Stop</button>';
     page = "home";
   `, ctx);
-  return {ctx, events, main, get writes() {return writes;},
+  return {ctx, events, main, nodes, get writes() {return writes;},
     get calls(){return calls;},
     setApi(){win.pywebview = {api: {stop() {calls++;return Promise.resolve();}}};}};
 }
+
+test("Live diagnostics report lookup progress and allow Stop while Start is queued", () => {
+  const b = createBrowser();
+  const stop = {disabled: true};
+  const pause = {disabled: false};
+  const status = {textContent: ""};
+  b.nodes['button[data-act="stop"]'] = [stop];
+  b.nodes['button[data-act="pause"]'] = [{...pause, classList: {contains() {return false;}}}];
+  b.nodes['[data-live="game-status"]'] = [status];
+  vm.runInContext(`
+    S["afk.diag_searching"] = "Searching";
+    S["afk.diag_lookup_error"] = "Search failed";
+    ST.engine.running = false;
+    ST.controls = {start_pending: true};
+    ST.diagnostics = {game_found: false, game_lookup_pending: true};
+    refreshLiveMetrics();
+  `, b.ctx);
+  assert.equal(stop.disabled, false);
+  assert.equal(b.nodes['button[data-act="pause"]'][0].disabled, true);
+  assert.equal(status.textContent, "Searching");
+  vm.runInContext('ST.controls.start_pending = false; ST.diagnostics.game_lookup_error = "OSError"; refreshLiveMetrics()', b.ctx);
+  assert.equal(stop.disabled, true);
+  assert.equal(status.textContent, "Search failed (OSError)");
+});
 
 test("Home polling does not replace the DOM while engine counters change", () => {
   const b = createBrowser();

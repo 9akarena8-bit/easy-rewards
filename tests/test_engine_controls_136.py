@@ -80,6 +80,7 @@ def test_pause_and_stop_work_during_blocked_capture(tmp_path):
         engine.stop()
         assert wait_until(lambda: not engine.running, 1.5)
         assert engine.state == "stopped"
+        assert not engine.paused and not engine.pause_reason
     finally:
         io.release.set()
 

@@ -779,6 +779,8 @@ class Engine:
         finally:
             if not self._paused.is_set():
                 self._run_seconds += time.monotonic() - self._tick_mark
+            self._paused.clear()
+            self.pause_reason = ""
             self.state = "stopped"
             self.wait_reason = ""
             self.log("log.stopped")
@@ -934,7 +936,6 @@ class Engine:
         # One dropped frame must not count as another match after recovery.
         if self._lobby_hud_misses >= 3:
             self._in_match = False
-        self._next_afk = now + 1.0
         if best and best[0] >= self.cfg.threshold and best[2].role in ("wait", "result"):
             self.state = "loading"
             self.lobby_state = "loading"
@@ -1051,9 +1052,8 @@ class Engine:
             # Fortnite is STILL foreground. Never click an unverified frame.
             self.state = "capture_waiting"
             if self._lobby_templates_active():
-                self.wait_reason = "lobby_scanning"
-                self._next_afk = time.monotonic() + 1.0
-            else:
+                self.wait_reason = self.wait_reason or "lobby_scanning"
+            elif not (self._awaiting_replay or self._replay_pending):
                 self._run_afk_if_due(time.monotonic())
             return
         if not self.io.game_in_foreground():
