@@ -6,6 +6,7 @@ on:
     branches:
       - 'fix/**'
       - 'feature/**'
+      - 'codex/integration-*'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -56,10 +57,23 @@ jobs:
           if (!(Test-Path $iscc)) { throw 'Inno Setup compiler not found' }
           & $iscc installer.iss
           if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed' }
+      - name: Record installer checksums and source commit
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem release -Filter '*.exe' -File)
+          if (!$installers.Count) { throw 'Beta installer not found' }
+          foreach ($installer in $installers) {
+            $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($installer.Name)" | Set-Content -LiteralPath "$($installer.FullName).sha256" -Encoding ascii
+          }
+          git rev-parse HEAD | Set-Content -LiteralPath release/source-commit.txt -Encoding ascii
       - name: Upload beta installer (no public release)
         uses: actions/upload-artifact@v4
         with:
-          name: Fortnite-Pirate-Token-v1.4.2-Beta-Setup
-          path: release/*.exe
+          name: Fortnite-Pirate-Token-Beta-${{ github.sha }}
+          path: |
+            release/*.exe
+            release/*.exe.sha256
+            release/source-commit.txt
           if-no-files-found: error
           retention-days: 7
