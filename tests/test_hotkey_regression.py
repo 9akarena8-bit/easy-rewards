@@ -18,6 +18,8 @@ def test_windows_hotkeys_are_mapped_and_live_configurable():
         assert f'"{key}": ' in shell
     assert "backend.cfg.afk_start_hotkey: backend.start" in shell
     assert "backend.cfg.afk_stop_hotkey: backend.stop" in shell
+    assert "backend.cfg.afk_pause_hotkey: backend.pause" in shell
+    assert '"F10": backend.pause' in shell
     assert '"F12": backend.stop' in shell
     assert "self.bindings() if callable(self.bindings)" in io
 
