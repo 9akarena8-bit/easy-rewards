@@ -44,6 +44,7 @@ class Config:
     auto_focus: bool = True          # try to bring the game window to front
     afk_enabled: bool = True
     afk_launch_game: bool = True  # ask Epic Launcher to open Fortnite on Start
+    afk_pause_on_alt_tab: bool = True  # keep manual resume after focus loss
     afk_start_hotkey: str = "F7"  # editable global shortcuts
     afk_stop_hotkey: str = "F8"
     afk_extra_enabled: bool = False  # opt in to jumps/clicks/item swaps
@@ -169,6 +170,8 @@ class Engine:
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._paused = threading.Event()
+        self.pause_reason = ""  # "" | "manual" | "focus_lost"
+        self._ever_foreground = False
         self._last_click = 0.0
         self._in_match = False
         self._result_seen = False
@@ -238,8 +241,8 @@ class Engine:
                 self._restart_pending = True
                 self.log("log.restart_queued")
             elif self.paused:
-                self.toggle_pause()
-            return
+                return self.toggle_pause()
+            return True
         n = self.reload_templates()
         # Anti-AFK mode must be runnable on a fresh install, even before
         # any screen templates have been captured.
@@ -252,6 +255,8 @@ class Engine:
         self._screen_epoch += 1
         self._stop.clear()
         self._paused.clear()
+        self.pause_reason = ""
+        self._ever_foreground = bool(self.io.game_in_foreground())
         self._tick_mark = time.monotonic()
         self._next_afk = time.monotonic() + min(0.7, self._afk_wait())
         self.state = "starting"
@@ -273,6 +278,7 @@ class Engine:
         self._restart_pending = False
         self._thread = threading.Thread(target=self._loop, name="engine", daemon=True)
         self._thread.start()
+        return True
 
     def stop(self) -> None:
         """Request a stop immediately; long template recognition must not freeze UI.
@@ -295,19 +301,50 @@ class Engine:
         thread.join(timeout=0.35)
         # _loop's finally clause marks the engine stopped and logs exactly once.
 
-    def toggle_pause(self) -> None:
-        if not self.running or self._stop.is_set():
+    def _pause_for_focus_loss(self) -> None:
+        """Latch a focus-loss pause without stopping the worker.
+
+        An in-flight input sees the paused event via should_abort and WinIO
+        releases held keys in finally. Invalidate any in-flight screenshot.
+        """
+        if not self.cfg.afk_pause_on_alt_tab or not self._ever_foreground:
             return
-        self._screen_epoch += 1  # Never reuse a pre-pause screenshot after resuming.
+        if self._stop.is_set() or self._paused.is_set():
+            return
+        self._screen_epoch += 1
+        self._run_seconds += max(0., time.monotonic() - self._tick_mark)
+        self.pause_reason = "focus_lost"
+        self.wait_reason = "focus_lost"
+        self._paused.set()
+        self.state = "paused"
+        self.log("log.afk_focus_paused")
+
+    def toggle_pause(self) -> bool:
+        """Manual Pause/Resume also used by F10 while Fortnite is foreground."""
+        if not self.running or self._stop.is_set():
+            return False
         if self.paused:
+            if not self.io.game_in_foreground():
+                self.wait_reason = "not_foreground"
+                return False
+            self._screen_epoch += 1
             self._tick_mark = time.monotonic()
+            self._next_afk = self._tick_mark + max(.35, self._afk_wait())
+            self._ever_foreground = True
+            self.wait_reason = ""
+            self.pause_reason = ""
+            self.state = "starting"
             self._paused.clear()
             self.log("log.resumed")
-        else:
-            self._run_seconds += time.monotonic() - self._tick_mark
-            self._paused.set()
-            self.state = "paused"
-            self.log("log.paused")
+            return True
+        self._screen_epoch += 1
+        self._run_seconds += max(0., time.monotonic() - self._tick_mark)
+        self._paused.set()
+        self.pause_reason = "manual"
+        self.wait_reason = ""
+        self.state = "paused"
+        self.log("log.paused")
+        return True
 
     def input_probe(self, target: str = "fortnite") -> dict:
         """Deliberate, bounded diagnostic. Never sends to an unexpected app.
@@ -570,9 +607,12 @@ class Engine:
         if not cfg.afk_enabled or now < self._next_afk:
             return
         def abort() -> bool:
-            return (self._stop.is_set() or self._paused.is_set() or
-                    ((cfg.require_foreground or cfg.afk_sequence_enabled) and
-                     not self.io.game_in_foreground()))
+            if self._stop.is_set() or self._paused.is_set():
+                return True
+            if not self.io.game_in_foreground():
+                self._pause_for_focus_loss()
+                return True
+            return False
         if cfg.afk_sequence_enabled:
             self._smart_afk_action(abort)
         else:
@@ -719,14 +759,22 @@ class Engine:
         if self._stop.is_set() or self._paused.is_set():
             return
         cfg = self.cfg
-        foreground_required = cfg.require_foreground or cfg.afk_sequence_enabled
-        if foreground_required and not self.io.game_in_foreground():
+        # NEVER send automation input to a non-Fortnite window, regardless
+        # of legacy require_foreground settings.
+        foreground_required = True
+        if not self.io.game_in_foreground():
+            if self._ever_foreground:
+                self._pause_for_focus_loss()
+                if self.paused:
+                    return
             now = time.monotonic()
-            # Do not constantly steal focus while the user is in the launcher.
-            if cfg.auto_focus and now >= self._next_focus_attempt and not self._stop.is_set():
+            # Focus may be requested during initial startup only. Once the
+            # user has been in Fortnite, Alt+Tab must not steal focus back.
+            if (not self._ever_foreground and cfg.auto_focus and
+                    now >= self._next_focus_attempt and not self._stop.is_set()):
                 self._next_focus_attempt = now + 7.0
                 try:
-                    result = self.io.focus_game()
+                    self.io.focus_game()
                     self.focus_result = "focused" if self.io.game_in_foreground() else "denied"
                 except Exception as exc:
                     self.focus_result = "error: " + str(exc)
@@ -737,6 +785,7 @@ class Engine:
                 self.state = "waiting_window"
                 self.score = 0.0
                 return
+        self._ever_foreground = True
         self.wait_reason = ""
         has_templates = bool(self.templates)
         scan_yellow = bool(cfg.afk_enabled and cfg.afk_replay_auto_detect)
@@ -762,6 +811,9 @@ class Engine:
             self.state = "capture_waiting"
             self._run_afk_if_due(time.monotonic())
             return
+        if not self.io.game_in_foreground():
+            self._pause_for_focus_loss()
+            return  # discard screenshot from the old foreground session
         frame_shape, best, reward_match, replay_match, death_match, yellow_found = analysis
         self.wait_reason = ""
         now = time.monotonic()
@@ -858,7 +910,8 @@ class Engine:
             return
         if best and best[0] >= cfg.threshold:
             if foreground_required and not self.io.game_in_foreground():
-                self.state = "waiting_window"
+                self._pause_for_focus_loss()
+                self.state = "paused" if self.paused else "waiting_window"
                 return
             if now - self._last_click < cfg.click_delay:
                 self.state = "button_waiting"
