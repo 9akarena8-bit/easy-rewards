@@ -149,6 +149,15 @@ class Backend:
                       "настраиваемые горячие клавиши, запуск через Epic Launcher и улучшенный подкат. "
                       "Telegram Stars, карты, СБП, QR, перевод и скины — демо, без реальной оплаты. "
                       "Работа в Fortnite требует проверки на Windows.")}] if self.version == "1.4.0" else []
+        if self.version == "1.4.1":
+            self._bundled_news = [{
+                "version": "1.4.1-beta",
+                "title": "Fortnite Pirate Token v1.4.1 Beta — исправление запуска",
+                "notes": ("Запуск Anti-AFK теперь не блокирует интерфейс при долгом "
+                          "ответе Windows: запрос окна и активация выполняются отдельно. "
+                          "Добавлены диагностика этапа запуска и безопасная отмена Stop. "
+                          "Beta требует проверки в Fortnite; оплаты выключены.")
+            }] + self._bundled_news
         self._release_news = list(self._bundled_news)
 
     # ------------------------------------------------------------ plumbing
