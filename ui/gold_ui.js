@@ -139,7 +139,7 @@
        <div class="gold-quick-actions"><button class="btn sm" data-page="afk">${ui("Настройки анти-AFK", "Anti-AFK settings", "Налаштування анти-AFK")} ↗</button>
        <button class="btn sm" data-act="ptest" data-target="fortnite">${ui("Тест ввода (F6)", "Input test (F6)", "Тест вводу (F6)")}</button>
        <button class="btn sm" data-act="reset">${t("btn.reset")}</button></div>
-       <small>${t("hotkeys")}</small></div>
+       <small>${hotkeySummary()}</small></div>
       ${todo ? `<div class="card gold-tip"><span class="gold-overline">${ui("ПЕРВЫЙ ЗАПУСК", "GET STARTED", "ПЕРШИЙ ЗАПУСК")}</span><p>${t("guide.card")}</p>
        <button class="btn pri sm" data-page="guide">${t("guide.open")}</button><button class="btn sm" data-act="dismiss">${t("guide.dismiss")}</button></div>` : ""}
     </div></div>`;
