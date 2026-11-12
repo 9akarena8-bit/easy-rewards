@@ -12,12 +12,18 @@ const t = (k, kw = {}) => (S[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "
 const fmtT = seconds => { const s = Math.floor(Math.max(0, Number(seconds) || 0)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(n => String(n).padStart(2, "0")).join(":"); };
 const num = n => Number(n).toLocaleString();
 const HOTKEY_OPTIONS = ["F1", "F2", "F3", "F4", "F5", "F7", "F8", "F11", "F12"];
-const hotkeyPicker = (key, selected) => `<select class="in hotkey-picker" data-cfg="${key}">${HOTKEY_OPTIONS.filter(x => key !== "afk_start_hotkey" || x !== "F12").map(x => `<option value="${x}" ${selected === x ? "selected" : ""}>${x}</option>`).join("")}</select>`;
-const hotkeySummary = () => `${ST?.cfg?.afk_start_hotkey || "F7"} ${controlUi("запуск", "start", "запуск")} · ${ST?.cfg?.afk_stop_hotkey || "F8"} ${controlUi("стоп", "stop", "стоп")} · F10 ${controlUi("пауза", "pause", "пауза")}`;
+const hotkeyPicker = (key, selected) => {
+  const choices = key === "afk_pause_hotkey"
+    ? ["F10", ...HOTKEY_OPTIONS.filter(x => x !== "F12")]
+    : HOTKEY_OPTIONS.filter(x => key !== "afk_start_hotkey" || x !== "F12");
+  return `<select class="in hotkey-picker" data-cfg="${key}">${choices.map(x => `<option value="${x}" ${selected === x ? "selected" : ""}>${x}</option>`).join("")}</select>`;
+};
+const resumeKey = () => ST?.cfg?.afk_pause_hotkey || "F10";
+const hotkeySummary = () => `${ST?.cfg?.afk_start_hotkey || "F7"} ${controlUi("запуск", "start", "запуск")} · ${ST?.cfg?.afk_stop_hotkey || "F8"} ${controlUi("стоп", "stop", "стоп")} · ${resumeKey()} ${controlUi("пауза", "pause", "пауза")}`;
 const hotkeyHelp = () => controlUi(
-  "Кнопки работают при свёрнутом лаунчере. F12 всегда экстренно останавливает анти-AFK. F6, F9, F10 зарезервированы; кнопки запуска и остановки должны различаться.",
-  "Shortcuts work while minimized. F12 is always the emergency Stop. F6, F9 and F10 are reserved; Start and Stop must differ.",
-  "Клавіші працюють у згорнутому вікні. F12 завжди екстрено зупиняє анти-AFK. F6, F9, F10 зарезервовані; запуск і зупинка мають відрізнятися."
+  "Горячие клавиши работают и в игре, и при свёрнутом лаунчере. F10 — запасная пауза/продолжение, F12 — экстренный стоп. Все три настраиваемые кнопки должны различаться.",
+  "Hotkeys work in game and when minimized. F10 is the fallback Pause/Resume; F12 is emergency Stop. Configurable keys must differ.",
+  "Клавіші працюють у грі й згорнутому вікні. F10 — резервна пауза/продовження, F12 — аварійна зупинка. Налаштовані клавіші мають відрізнятися."
 );
 const tog = (k, on) => `<div class="tog ${on ? "on" : ""}" data-tog="${k}"></div>`;
 function toast(m) { clearTimeout(toastT); document.querySelectorAll(".toast").forEach(e => e.remove());
@@ -58,13 +64,14 @@ function refreshLiveMetrics() {
   updateText('[data-live="afk-last"]', t("afk.last") + ": " + (e.last_input || "—"));
   document.querySelectorAll('[data-live="pause-hint"]').forEach(node => {
     node.hidden = !(e.running && e.paused);
-    if (!node.hidden) node.textContent = e.pause_reason === "focus_lost"
-      ? controlUi("Alt+Tab: действия остановлены. Вернись в Fortnite и нажми F10, чтобы продолжить.",
-                  "Alt+Tab: actions paused. Return to Fortnite and press F10 to resume.",
-                  "Alt+Tab: дії призупинено. Повернися у Fortnite та натисни F10.")
-      : controlUi("Анти-AFK на паузе. Вернись в Fortnite и нажми F10.",
-                  "Anti-AFK paused. Return to Fortnite and press F10.",
-                  "Анти-AFK на паузі. Повернися у Fortnite та натисни F10.");
+    if (!node.hidden) node.textContent = (e.pause_reason === "focus_lost"
+      ? controlUi("Alt+Tab: действия приостановлены. Вернись в Fortnite и нажми ",
+                  "Alt+Tab: actions paused. Return to Fortnite and press ",
+                  "Alt+Tab: дії призупинено. Повернися у Fortnite та натисни ")
+      : controlUi("Анти-AFK на паузе. Вернись в Fortnite и нажми ",
+                  "Anti-AFK paused. Return to Fortnite and press ",
+                  "Анти-AFK на паузі. Повернися у Fortnite та натисни "))
+      + resumeKey() + (resumeKey() === "F10" ? "." : " (F10 тоже работает).");
   });
   updateText('[data-live="game-status"]', ST.diagnostics?.game_active ? t("diag.active")
     : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing")));
@@ -121,7 +128,7 @@ async function runControlAction(action, target = "fortnite") {
       toast(action === "focusgame" && S["afk.focus_" + reason]
         ? t("afk.focus_" + reason)
         : reason === "return_to_game"
-          ? controlUi("Для продолжения переключись в Fortnite и нажми F10.", "Return to Fortnite and press F10 to resume.", "Повернися у Fortnite та натисни F10 для продовження.")
+          ? controlUi("Вернись в Fortnite и нажми ", "Return to Fortnite and press ", "Повернися у Fortnite та натисни ") + resumeKey()
         : reason === "epic_launcher_unavailable"
           ? controlUi("Не найден Epic Games Launcher. Запусти Fortnite вручную или отключи автозапуск в настройках.", "Epic Games Launcher not found. Launch Fortnite manually or disable auto-launch.", "Epic Games Launcher не знайдено. Запусти Fortnite вручну або вимкни автозапуск.")
           : controlUi("Команда отклонена: ", "Command rejected: ", "Команду відхилено: ") + reason);
@@ -289,6 +296,7 @@ const PAGE = {
       ${f(controlUi("Автопауза при Alt+Tab", "Auto-pause on Alt+Tab", "Автопауза при Alt+Tab"), tog("afk_pause_on_alt_tab", c.afk_pause_on_alt_tab))}
       ${f(controlUi("Клавиша запуска", "Start hotkey", "Клавіша запуску"), hotkeyPicker("afk_start_hotkey", c.afk_start_hotkey))}
       ${f(controlUi("Клавиша остановки", "Stop hotkey", "Клавіша зупинки"), hotkeyPicker("afk_stop_hotkey", c.afk_stop_hotkey))}
+      ${f(controlUi("Клавиша паузы/продолжения", "Pause/Resume hotkey", "Клавіша паузи/продовження"), hotkeyPicker("afk_pause_hotkey", c.afk_pause_hotkey))}
       <p class="mute hotkey-help">${hotkeyHelp()}</p>
       <h3 style="margin-top:14px">${t("afk.motion")}</h3>
       ${f(t("afk.jump"), tog("afk_jump_enabled", c.afk_jump_enabled))}
@@ -362,6 +370,7 @@ const PAGE = {
       <h3 style="margin-top:18px">${t("set.hotkeys")}</h3>
       ${f(controlUi("Запустить анти-AFK", "Start anti-AFK", "Запустити анти-AFK"), hotkeyPicker("afk_start_hotkey", c.afk_start_hotkey))}
       ${f(controlUi("Остановить анти-AFK", "Stop anti-AFK", "Зупинити анти-AFK"), hotkeyPicker("afk_stop_hotkey", c.afk_stop_hotkey))}
+      ${f(controlUi("Пауза/продолжить", "Pause/Resume", "Пауза/продовжити"), hotkeyPicker("afk_pause_hotkey", c.afk_pause_hotkey))}
       ${f(controlUi("Открывать Fortnite автоматически", "Launch Fortnite automatically", "Автоматично запускати Fortnite"), tog("afk_launch_game", c.afk_launch_game))}
       ${f(controlUi("Ставить анти-AFK на паузу при Alt+Tab", "Pause anti-AFK on Alt+Tab", "Призупиняти анти-AFK при Alt+Tab"), tog("afk_pause_on_alt_tab", c.afk_pause_on_alt_tab))}
       <p class="mute hotkey-help">${hotkeyHelp()}</p></div>
