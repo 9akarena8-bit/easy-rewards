@@ -77,6 +77,9 @@ function refreshLiveMetrics() {
     : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing")));
   updateText('[data-live="foreground-title"]', ST.diagnostics?.foreground_title || t("diag.none"));
   updateText('[data-live="foreground-process"]', ST.diagnostics?.foreground_process || "—");
+  updateText('[data-live="lobby-state"]', e.lobby_state || "idle");
+  updateText('[data-live="lobby-clicks"]', e.lobby_clicks || 0);
+  updateText('[data-live="start-phase"]', ST.controls?.start_phase || "idle");
   updateText('[data-live="last-control"]', (ST.controls?.last || "—")
     + " " + (ST.controls?.time || "") + " (" + Number(ST.controls?.sequence || 0) + ")");
   document.querySelectorAll('button[data-act="start"]').forEach(node => { node.disabled = Boolean(e.running); });
@@ -260,7 +263,7 @@ const PAGE = {
     <p class="mute">${t("afk.v13desc")}</p>
     <div class="row" style="margin-bottom:14px;flex-wrap:wrap">
       <button class="btn pri" data-act="start" ${e.running ? "disabled" : ""}>▶ ${t("btn.start")}</button>
-      <button class="btn" data-act="stop" ${!e.running ? "disabled" : ""}>■ ${t("btn.stop")}</button>
+      <button class="btn" data-act="stop" ${!e.running && !ST.controls?.start_pending ? "disabled" : ""}>■ ${t("btn.stop")}</button>
       <button class="btn" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? t("btn.resume") : t("btn.pause")}</button>
       <span class="badge" data-live="afk-total">${t("afk.total")}: ${e.input_count}</span>
       <span class="badge" data-live="afk-last">${t("afk.last")}: ${esc(e.last_input || "—")}</span>
@@ -274,6 +277,9 @@ const PAGE = {
         (<span data-live="foreground-process">${esc(ST.diagnostics?.foreground_process || "—")}</span>)</p>
       <p class="mute">${t("afk.last_control")}: <b data-live="last-control">${esc(ST.controls?.last || "—")} ${esc(ST.controls?.time || "")} (${Number(ST.controls?.sequence || 0)})</b></p>
       ${e.wait_reason ? `<p class="focus-warn">${esc(t("afk.reason_" + e.wait_reason))}</p>` : ""}
+      <p class="mute">${t("afk.lobby_status")}: <b data-live="lobby-state">${esc(e.lobby_state || "idle")}</b> · ${t("afk.lobby_clicks")}: <b data-live="lobby-clicks">${Number(e.lobby_clicks || 0)}</b></p>
+      <p class="mute">${t("afk.start_phase")}: <b data-live="start-phase">${esc(ST.controls?.start_phase || "idle")}</b></p>
+      ${e.lobby_buttons_configured && !e.lobby_hud_configured ? `<p class="focus-warn">${t("afk.lobby_hud_warning")}</p>` : ""}
       <div class="row" style="flex-wrap:wrap;gap:10px">
         <button class="btn sm" data-act="focusgame" ${!ST.diagnostics?.game_found ? "disabled" : ""}>${t("afk.focus_button")}</button>
         <button class="btn sm pri" data-act="ptest" data-target="fortnite" ${e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_button")}</button>
@@ -288,6 +294,8 @@ const PAGE = {
     <div class="grid g2" style="align-items:start">
     <div class="card"><h3>${t("afk.mode")}</h3>
       ${f(t("afk.enabled"), tog("afk_enabled", c.afk_enabled))}
+      ${f(t("afk.lobby_auto"), tog("lobby_autostart_enabled", c.lobby_autostart_enabled))}
+      <p class="mute">${t("afk.lobby_templates_help")}</p>
       ${f(t("afk.sequence"), tog("afk_sequence_enabled", c.afk_sequence_enabled))}
       ${f(t("afk.minpause"), sl("afk_pause_min", .2, 5, .1))}
       ${f(t("afk.maxpause"), sl("afk_pause_max", .2, 5, .1))}
@@ -354,7 +362,7 @@ const PAGE = {
   },
   templates() {
     return `<p class="mute" style="margin:0 0 14px">${t("tpl.subtitle")}</p><div class="card">
-    <div class="row" style="margin-bottom:10px"><select class="in" id="role" style="width:auto">${["start", "result", "wait", "reward", "replay", "death"].map(r => `<option value="${r}" ${tplRole === r ? "selected" : ""}>${t("tpl.role_" + r)}</option>`).join("")}</select>
+    <div class="row" style="margin-bottom:10px"><select class="in" id="role" style="width:auto">${["start", "lobby_play", "lobby_ready", "lobby_confirm", "match_hud", "result", "wait", "reward", "replay", "death"].map(r => `<option value="${r}" ${tplRole === r ? "selected" : ""}>${t("tpl.role_" + r)}</option>`).join("")}</select>
       <input class="in" id="tname" value="${esc(tplName)}" placeholder="${t("tpl.name")}" style="width:160px"><button class="btn pri" data-act="cap">${t("tpl.capture")}</button><button class="btn" data-act="test">${t("tpl.test")}</button></div>
     <div class="mute" style="margin-bottom:6px">${t("tpl.legend")}</div>
     ${tplList.map(x => `<div class="tpl"><img src="${x.thumb}" alt=""><div style="flex:1"><b>${esc(x.name)}</b><div class="mute">${x.w}×${x.h}px</div></div>
