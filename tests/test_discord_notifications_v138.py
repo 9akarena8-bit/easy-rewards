@@ -92,3 +92,50 @@ def test_invalid_or_missing_webhook_never_enables(tmp_path):
     assert d2.status()["enabled"]
     assert d2.clear()["ok"]
     assert not (tmp_path / "notifications.json").exists()
+
+
+def test_configure_failure_preserves_existing_secret_and_status(tmp_path, monkeypatch):
+    path = tmp_path / "discord.json"
+    d = dn.DiscordNotifications(path)
+    assert d.configure(VALID, enabled=False)["ok"]
+    saved = path.read_bytes()
+    before = d.status()
+
+    def fail_replace(*args, **kwargs):
+        raise PermissionError("simulated file lock")
+
+    monkeypatch.setattr(dn.os, "replace", fail_replace)
+    new_url = VALID.replace("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    assert d.configure(new_url, enabled=True)["ok"] is False
+    assert d.status() == before
+    assert path.read_bytes() == saved
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_clear_failure_preserves_persisted_state(tmp_path, monkeypatch):
+    from pathlib import Path
+    path = tmp_path / "discord.json"
+    d = dn.DiscordNotifications(path)
+    assert d.configure(VALID, enabled=False)["ok"]
+    original = Path.unlink
+
+    def deny(self, *args, **kwargs):
+        if self == path:
+            raise PermissionError("locked")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", deny)
+    assert d.clear()["ok"] is False
+    assert d.status()["configured"]
+    assert path.exists()
+
+
+def test_support_report_removes_webhook_from_unexpected_error(tmp_path):
+    import support_report
+    b = Backend(tmp_path, IO())
+    b.log("log.error", err="network " + VALID + "?wait=true")
+    result = b.create_support_report()
+    assert result["ok"]
+    assert VALID not in result["text"]
+    assert "DISCORD_WEBHOOK_REDACTED" in result["text"]
+    assert VALID not in support_report.clean(VALID)
