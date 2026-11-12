@@ -18,7 +18,7 @@ This is an **unofficial** community utility, not affiliated with Epic Games or F
 1. Download the **Beta Windows Installer** artifact from the project's GitHub Actions beta workflow.
 2. Install on a computer where Epic Games Launcher and Fortnite are already installed.
 3. Open the app; verify the F-token artwork, home page, gold cards and subscription preview.
-4. Under **Settings**, choose two **different** function keys, e.g. F3 Start and F4 Stop.
+4. Under **Settings**, choose distinct function keys, e.g. F3 Start, F4 Stop, F5 Pause/Resume.
    Avoid binding keys that you personally use in a game.
 5. With Fortnite closed, press Start; confirm that the Epic Launcher *tries* to open Fortnite.
    If not, note whether the Epic Launcher is installed, and copy the error text.
@@ -26,14 +26,14 @@ This is an **unofficial** community utility, not affiliated with Epic Games or F
 7. Press the configured Stop key with the launcher minimized. Confirm engine status is Stopped. Restart and press F12: emergency Stop must work even after rebinding.
 8. Open Fortnite, press Start, and Alt+Tab to any other window. The engine must
    enter **Paused / focus_lost** without bringing Fortnite back by itself.
-   Return to Fortnite. Nothing must resume until **F10** (or Start shortcut)
+   Return to Fortnite. Nothing must resume until **F5** (or F10 / Start shortcut)
    is pressed while Fortnite has focus.
 9. Try the Pause button in the launcher while the game is not foreground: a
    clear "return to Fortnite" message must appear, and no input is sent to the
    launcher or other applications. Test F12 during the pause.
 10. Disable the "Auto-pause on Alt+Tab" setting and verify input remains
     blocked outside Fortnite and Fortnite focus is not stolen. Re-enable it.
-11. Repeat with Start/Stop buttons in the app. Try Pause and inspect the diagnostics panel.
+11. Repeat with Start/Stop buttons in the app. Try the custom Pause/Resume key and F10 fallback.
 12. Verify that settings are kept after closing and reopening the app.
 13. On the Anti-AFK page, click **Отчёт для тестирования**. The launcher opens
     Support and prepares a local text report for review and copying.
