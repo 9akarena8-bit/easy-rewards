@@ -71,7 +71,7 @@ function refreshLiveMetrics() {
       : controlUi("Анти-AFK на паузе. Вернись в Fortnite и нажми ",
                   "Anti-AFK paused. Return to Fortnite and press ",
                   "Анти-AFK на паузі. Повернися у Fortnite та натисни "))
-      + resumeKey() + (resumeKey() === "F10" ? "." : " (F10 тоже работает).");
+      + resumeKey() + (resumeKey() === "F10" ? "." : controlUi(" (F10 тоже работает).", " (F10 also works).", " (F10 також працює)."));
   });
   updateText('[data-live="game-status"]', ST.diagnostics?.game_active ? t("diag.active")
     : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing")));
