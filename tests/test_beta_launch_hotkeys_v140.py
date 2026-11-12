@@ -86,10 +86,27 @@ def test_shortcut_validation_prevents_collisions_and_reserved_keys(tmp_path):
     assert b.cfg.afk_start_hotkey == "F3"
     assert b.set_config({"afk_stop_hotkey": "F3"}) == {"ok": False, "rejected": ["afk_stop_hotkey"]}
     assert b.set_config({"afk_start_hotkey": "F6"}) == {"ok": False, "rejected": ["afk_start_hotkey"]}
+    assert b.set_config({"afk_start_hotkey": "F12"}) == {"ok": False, "rejected": ["afk_start_hotkey"]}
     assert b.set_config({"afk_stop_hotkey": "Enter"}) == {"ok": False, "rejected": ["afk_stop_hotkey"]}
     assert {"F1", "F5", "F7", "F8", "F11", "F12"} <= set(AFK_HOTKEY_CHOICES)
     assert all(k not in AFK_HOTKEY_CHOICES for k in ("F6", "F9", "F10"))
     assert Config.load(tmp_path / "config.json").afk_start_hotkey == "F3"
+
+
+def test_malformed_config_never_overwrites_emergency_stop(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"afk_start_hotkey":"F12", "afk_stop_hotkey":"F12"}', encoding="utf-8")
+    b = Backend(tmp_path, FakeEpicIO())
+    assert b.cfg.afk_start_hotkey == "F7"
+    assert b.cfg.afk_stop_hotkey == "F12"
+
+
+def test_duplicated_config_hotkeys_repaired_before_polling(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"afk_start_hotkey":"F8", "afk_stop_hotkey":"F8"}', encoding="utf-8")
+    b = Backend(tmp_path, FakeEpicIO())
+    assert b.cfg.afk_start_hotkey == "F8"
+    assert b.cfg.afk_stop_hotkey == "F12"
 
 
 def test_beta_gui_contains_live_hotkeys_and_existing_controls():
