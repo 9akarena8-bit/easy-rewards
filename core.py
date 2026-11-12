@@ -633,7 +633,18 @@ class Engine:
                     self.last_input_error = repr(exc)
                     self.log("log.error", err=repr(exc))
                     self._stop.wait(1.0)
-                self._stop.wait(max(0.0, self.cfg.scan_interval - (time.monotonic() - t0)))
+                # Check foreground during the scan interval too. Otherwise
+                # Alt+Tab during a long user-configured interval may go
+                # unnoticed until the next expensive screenshot pass.
+                remaining = max(0., self.cfg.scan_interval - (time.monotonic() - t0))
+                while remaining > 0 and not self._stop.is_set() and not self._paused.is_set():
+                    if self._ever_foreground and not self.io.game_in_foreground():
+                        self._pause_for_focus_loss()
+                        if self._paused.is_set():
+                            break
+                    step = min(.05, remaining)
+                    self._stop.wait(step)
+                    remaining -= step
         finally:
             if not self._paused.is_set():
                 self._run_seconds += time.monotonic() - self._tick_mark
