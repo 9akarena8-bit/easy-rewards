@@ -110,6 +110,7 @@ class Backend:
         self._start_guard = threading.Lock()
         self._start_serial = 0
         self._start_pending = False
+        self._restart_after_cancel = False  # latest Start while canceled init is draining
         self._start_phase = "idle"
         self._start_error = ""
         self.reward_stats = RewardStats(self.base / "rewards.json")
@@ -376,6 +377,13 @@ class Backend:
             return {"ok": True, "reason": "resumed" if was_paused else "already_running"}
         with self._start_guard:
             if self._start_pending:
+                # Stop invalidated the slow first initialization, but its worker
+                # has not finished yet. Remember the user's newer Start and
+                # launch it AFTER the canceled worker fully exits.
+                if self._start_phase == "cancelled":
+                    self._restart_after_cancel = True
+                    self._start_phase = "queued"
+                    self._start_error = ""
                 return {"ok": True, "reason": "start_queued"}
             self._start_serial += 1
             generation = self._start_serial
@@ -416,8 +424,24 @@ class Backend:
                     self._start_error = type(exc).__name__ + ": " + str(exc)[:180]
             self.log("log.error", err="start: " + type(exc).__name__)
         finally:
+            next_generation = None
             with self._start_guard:
-                self._start_pending = False
+                if self._restart_after_cancel:
+                    # No overlapping engine.init: previous generation has
+                    # returned from engine.start/stop before the new one starts.
+                    self._restart_after_cancel = False
+                    self._start_serial += 1
+                    next_generation = self._start_serial
+                    self._start_pending = True
+                    self._start_phase = "queued"
+                    self._start_error = ""
+                else:
+                    self._start_pending = False
+            if next_generation is not None:
+                threading.Thread(
+                    target=self._start_in_background, args=(next_generation,),
+                    name="engine-restart-after-cancel", daemon=True
+                ).start()
 
     def _activate_game_after_start(self, generation: int) -> None:
         """Optional OS focus/launcher request cannot block Python API or start."""
@@ -465,6 +489,7 @@ class Backend:
         self._control_received("stop")
         with self._start_guard:
             self._start_serial += 1
+            self._restart_after_cancel = False
             self._start_phase = "cancelled"
         self.engine.stop()
 
