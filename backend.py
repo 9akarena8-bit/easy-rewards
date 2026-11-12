@@ -39,7 +39,9 @@ NUM_LIMITS = {          # key: (type, lo, hi)
     "afk_pause_max": (float, 0.2, 10.0),
     "afk_camera_pixels_360": (float, 100.0, 12000.0),
 }
-BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
+# Reserve F6 input test, F9 counter and F10 pause. Distinct Start/Stop keys.
+AFK_HOTKEY_CHOICES = tuple(f"F{i}" for i in range(1, 13) if i not in (6, 9, 10))
+BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "afk_launch_game", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
          "afk_slide_enabled", "afk_camera_enabled", "afk_slot_enabled", "afk_pickaxe_enabled",
          "afk_grenade_enabled", "afk_weapon_enabled", "afk_replay_auto_detect")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
@@ -253,9 +255,34 @@ class Backend:
         }
 
     # ------------------------------------------------------------ engine controls
-    def start(self) -> None:
+    def start(self) -> dict:
+        """Start the engine; optionally request Fortnite launch via Epic protocol.
+
+        Dispatching a URI is not proof that the game has started. The engine
+        waits for a verified foreground Fortnite window before sending input.
+        """
         self._control_received("start")
+        if self.engine.running:
+            self.engine.start()  # existing resume / queued-restart semantics
+            return {"ok": True, "reason": "already_running"}
+        if self.cfg.afk_launch_game and not self.io.game_window_found():
+            launcher = getattr(self.io, "launch_game", None)
+            if callable(launcher):
+                try:
+                    if not launcher():
+                        return {"ok": False, "reason": "epic_launcher_unavailable"}
+                except (OSError, ValueError) as exc:
+                    return {"ok": False, "reason": "epic_launch_error", "detail": str(exc)[:180]}
+                self.engine.start()
+                return {"ok": True, "reason": "launch_requested"}
+        # Test IO adapters and disabled auto-launch continue to work without Epic.
         self.engine.start()
+        if self.cfg.auto_focus and self.io.game_window_found():
+            try:
+                self.io.focus_game()
+            except (OSError, RuntimeError):
+                pass
+        return {"ok": True, "reason": "started"}
 
     def input_probe_delayed(self, target: str = "fortnite") -> dict:
         """Schedule a test while the user switches to the target window."""
@@ -315,6 +342,13 @@ class Backend:
                     if v not in STRS[k]:
                         raise ValueError(k)
                     setattr(self.cfg, k, v)
+                elif k in ("afk_start_hotkey", "afk_stop_hotkey"):
+                    key = str(v).strip().upper()
+                    other = ("afk_stop_hotkey" if k == "afk_start_hotkey"
+                             else "afk_start_hotkey")
+                    if key not in AFK_HOTKEY_CHOICES or key == getattr(self.cfg, other):
+                        raise ValueError(k)
+                    setattr(self.cfg, k, key)
                 elif k == "afk_keys":
                     keys = "".join(dict.fromkeys(c for c in str(v).lower() if c in "wasd"))
                     if not keys:
