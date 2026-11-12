@@ -126,6 +126,7 @@ def main() -> int:
                          daemon=True).start()
 
     hooks.focus_on_start = focus_after_start
+    hooks.launch_game = backend.io.launch_game
     hotkeys.start()
 
     update_shutdown = threading.Event()
