@@ -26,7 +26,7 @@ from merchant_service.license_client import LicenseClient
 import support_report
 import discord_notifications
 import webbrowser
-from core import ROLES, Config, Engine, best_match, imread_unicode, load_templates
+from core import ROLES, LOBBY_ROLES, LOBBY_BUTTON_ROLES, Config, Engine, best_match, imread_unicode, load_templates, template_role
 from i18n import LANGS, STRINGS
 from tracker import Tracker
 from reward_stats import RewardStats
@@ -44,7 +44,7 @@ NUM_LIMITS = {          # key: (type, lo, hi)
 # Reserve F6 input test, F9 counter and F10 pause. Distinct Start/Stop keys.
 AFK_HOTKEY_CHOICES = tuple(f"F{i}" for i in range(1, 13) if i not in (6, 9, 10))
 AFK_PAUSE_HOTKEY_CHOICES = ("F10",) + tuple(k for k in AFK_HOTKEY_CHOICES if k != "F12")
-BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "afk_launch_game", "afk_pause_on_alt_tab", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
+BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "lobby_autostart_enabled", "afk_launch_game", "afk_pause_on_alt_tab", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
          "afk_slide_enabled", "afk_camera_enabled", "afk_slot_enabled", "afk_pickaxe_enabled",
          "afk_grenade_enabled", "afk_weapon_enabled", "afk_replay_auto_detect")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
@@ -280,7 +280,7 @@ class Backend:
         folder = self.templates_root / self.cfg.language
         if folder.is_dir():
             for p in folder.glob("*.png"):
-                role = p.stem.split("_", 1)[0].lower()
+                role = template_role(p.stem.lower())
                 if role in counts:
                     counts[role] += 1
         return counts
@@ -327,7 +327,12 @@ class Backend:
                        "probe_at": e.probe_at, "probe_target": e.probe_target,
                        "replay_count": e.replay_count, "replay_status": e.replay_status,
                        "replay_source": e.replay_source, "replay_attempts": e.replay_attempts,
-                       "focus_result": e.focus_result},
+                       "focus_result": e.focus_result,
+                       "lobby_state": e.lobby_state,
+                       "lobby_clicks": e.lobby_clicks,
+                       "lobby_last_button": e.lobby_last_button,
+                       "lobby_buttons_configured": sum(counts.get(role, 0) for role in LOBBY_BUTTON_ROLES),
+                       "lobby_hud_configured": counts.get("match_hud", 0) > 0},
             "reward": {"session": e.rewards, "total": self.reward_stats.total},
             "diagnostics": {
                 "foreground_title": (self.io.foreground_title() if hasattr(self.io, "foreground_title") else ""),
@@ -541,7 +546,7 @@ class Backend:
         out = []
         folder = self.templates_root / self.cfg.language
         for p in sorted(folder.glob("*.png")) if folder.is_dir() else []:
-            role = p.stem.split("_", 1)[0].lower()
+            role = template_role(p.stem.lower())
             img = imread_unicode(p)
             if role not in ROLES or img is None or not img.size:
                 continue
@@ -593,6 +598,8 @@ class Backend:
         if x2 - x < 8 or y2 - y < 8:
             return {"ok": False, "error": "small"}
         crop = self._shot[y:y2, x:x2]
+        if role in LOBBY_ROLES and float(np.std(crop)) < 7.0:
+            return {"ok": False, "error": "low_detail_template"}
         path = self.templates_root / self.cfg.language / f"{role}_{safe_name(name)}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
         ok, buf = cv2.imencode(".png", crop)
