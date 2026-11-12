@@ -108,6 +108,9 @@ class Backend:
         self._control_action = "none"
         self._control_time = ""
         self._start_guard = threading.Lock()
+        # Serialize slow Engine.start() calls across Stop -> Start. Without
+        # this lock, an old cancelled initializer can stop a newer session.
+        self._engine_start_guard = threading.Lock()
         self._start_serial = 0
         self._start_pending = False
         self._start_phase = "idle"
@@ -380,28 +383,36 @@ class Backend:
         return {"ok": True, "reason": "start_queued"}
 
     def _start_in_background(self, generation: int) -> None:
-        """Start the engine before requesting a normal Windows/Epic focus change."""
+        """Initialize one engine generation at a time; old Stop wins."""
         try:
-            with self._start_guard:
-                if generation != self._start_serial:
-                    return
-                self._start_phase = "initializing_engine"
-            self.engine.start()
-            with self._start_guard:
-                cancelled = generation != self._start_serial
-            if cancelled:
-                self.engine.stop()
-                return
-            if not self.engine.running:
+            # The old generation may still be blocked inside template loading
+            # when Stop and a fresh Start arrive. Waiting here does not block
+            # the Python GUI bridge. It prevents overlapping engine startups.
+            with self._engine_start_guard:
                 with self._start_guard:
-                    self._start_phase = "not_started"
-                    self._start_error = "engine_disabled_or_not_started"
-                return
-            with self._start_guard:
-                self._start_phase = "waiting_for_fortnite"
-            threading.Thread(target=self._activate_game_after_start,
-                             args=(generation,), name="game-activation",
-                             daemon=True).start()
+                    if generation != self._start_serial:
+                        return
+                    self._start_phase = "initializing_engine"
+                self.engine.start()
+                with self._start_guard:
+                    cancelled = generation != self._start_serial
+                if cancelled:
+                    self.engine.stop()
+                    return
+                if not self.engine.running:
+                    with self._start_guard:
+                        if generation == self._start_serial:
+                            self._start_phase = "not_started"
+                            self._start_error = "engine_disabled_or_not_started"
+                    return
+                with self._start_guard:
+                    if generation != self._start_serial:
+                        self.engine.stop()
+                        return
+                    self._start_phase = "waiting_for_fortnite"
+                threading.Thread(target=self._activate_game_after_start,
+                                 args=(generation,), name="game-activation",
+                                 daemon=True).start()
         except Exception as exc:
             with self._start_guard:
                 if generation == self._start_serial:
@@ -410,7 +421,9 @@ class Backend:
             self.log("log.error", err="start: " + type(exc).__name__)
         finally:
             with self._start_guard:
-                self._start_pending = False
+                # A late old worker must not clear the newer Start's status.
+                if generation == self._start_serial:
+                    self._start_pending = False
 
     def _activate_game_after_start(self, generation: int) -> None:
         """Optional OS focus/launcher request cannot block Python API or start."""
@@ -458,6 +471,9 @@ class Backend:
         self._control_received("stop")
         with self._start_guard:
             self._start_serial += 1
+            # Clear the cancelled request so Start can schedule a NEW
+            # generation even if old template loading has not returned.
+            self._start_pending = False
             self._start_phase = "cancelled"
         self.engine.stop()
 
