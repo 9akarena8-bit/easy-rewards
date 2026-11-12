@@ -47,6 +47,7 @@ class Config:
     afk_pause_on_alt_tab: bool = True  # keep manual resume after focus loss
     afk_start_hotkey: str = "F7"  # editable global shortcuts
     afk_stop_hotkey: str = "F8"
+    afk_pause_hotkey: str = "F10"  # F10 remains an always-available backup
     afk_extra_enabled: bool = False  # opt in to jumps/clicks/item swaps
     afk_interval: float = 6.0       # seconds between anti-AFK presses
     afk_hold: float = 3.0           # max seconds a key is held
