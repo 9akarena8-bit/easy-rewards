@@ -78,6 +78,7 @@ function refreshLiveMetrics() {
   updateText('[data-live="foreground-title"]', ST.diagnostics?.foreground_title || t("diag.none"));
   updateText('[data-live="foreground-process"]', ST.diagnostics?.foreground_process || "—");
   updateText('[data-live="focus-result"]', focusStatusLabel(e.focus_result));
+  updateText('[data-live="auto-pause"]', t(e.paused ? "afk.auto_pause_manual" : e.focus_suspended ? "afk.auto_pause_wait" : "afk.auto_pause_ready"));
   updateText('[data-live="last-control"]', (ST.controls?.last || "—")
     + " " + (ST.controls?.time || "") + " (" + Number(ST.controls?.sequence || 0) + ")");
   document.querySelectorAll('button[data-act="start"]').forEach(node => { node.disabled = Boolean(e.running); });
@@ -90,11 +91,11 @@ function refreshLiveMetrics() {
     if (node.textContent !== text) node.textContent = text;
   });
   document.querySelectorAll('.gold-status').forEach(node => {
-    node.querySelector(".gold-led")?.classList.toggle("active", Boolean(e.running && !e.paused));
+    node.querySelector(".gold-led")?.classList.toggle("active", Boolean(e.running && !e.paused && !e.focus_suspended));
     if (node.lastChild?.nodeType === 3) node.lastChild.nodeValue = t("state." + e.state);
   });
   document.querySelectorAll('.home-topline .pill').forEach(node => {
-    node.querySelector(".dot")?.classList.toggle("on", Boolean(e.running && !e.paused));
+    node.querySelector(".dot")?.classList.toggle("on", Boolean(e.running && !e.paused && !e.focus_suspended));
     if (node.lastChild?.nodeType === 3) node.lastChild.nodeValue = t("state." + e.state);
   });
   const logNumber = ST.log.length ? ST.log[ST.log.length - 1].n : 0;
@@ -211,7 +212,7 @@ const PAGE = {
   home() {
     const e = ST.engine, g = ST.guide, h = e.history, mx = Math.max(1, ...h.map(x => x.games + x.cycles));
     const done = [g.c1, g.c2, g.c3], quick = !g.dismissed && !done.every(Boolean);
-    const status = `<span class="pill"><span class="dot ${e.running && !e.paused ? "on" : ""}"></span>${t("state." + e.state)}</span>`;
+    const status = `<span class="pill"><span class="dot ${e.running && !e.paused && !e.focus_suspended ? "on" : ""}"></span>${t("state." + e.state)}</span>`;
     return `<div class="home-topline"><div><div class="eyebrow">✧ ${t("home.overview")}</div><div class="intro-head">${t("home.title")}<span class="intro-line"></span></div></div>
       <div class="home-top-panels"><div class="session-head"><span>${t("home.status")}</span>${status}</div>
       <button class="btn sm" data-page="guide">${t("guide.open")}</button></div></div>
@@ -255,9 +256,10 @@ const PAGE = {
       </select></label>`;
     const f = (label, inner) => `<div class="field"><span>${label}</span>${inner}</div>`;
     const sl = (key, min, max, step) => `<div class="row"><input type="range" data-cfg="${key}" min="${min}" max="${max}" step="${step}" value="${c[key]}"><b data-out="${key}">${c[key]}</b></div>`;
-    const status = `<span class="pill"><span class="dot ${e.running && !e.paused ? "on" : ""}"></span>${t("state." + e.state)}</span>`;
+    const status = `<span class="pill"><span class="dot ${e.running && !e.paused && !e.focus_suspended ? "on" : ""}"></span>${t("state." + e.state)}</span>`;
     return `<div class="home-topline"><div><div class="eyebrow">✧ ${t("afk.subtitle_small")}</div><div class="intro-head">${t("afk.title")}<span class="intro-line"></span></div></div>${status}</div>
     <p class="mute">${t("afk.v13desc")}</p>
+    <div class="afk-auto-pause" data-live="auto-pause">${t(e.paused ? "afk.auto_pause_manual" : e.focus_suspended ? "afk.auto_pause_wait" : "afk.auto_pause_ready")}</div>
     <div class="card afk-hotkey-card">
       <h3>${hotkeyLocale("Горячие клавиши", "Keyboard shortcuts", "Гарячі клавіші")}</h3>
       <div class="afk-hotkey-grid">
