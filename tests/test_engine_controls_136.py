@@ -113,3 +113,12 @@ def test_focus_game_reports_real_windows_result(tmp_path):
     io.game_in_foreground = lambda: False
     io.focus_game = lambda: False
     assert backend.focus_game_now() == {"ok": False, "reason": "denied"}
+
+def test_backend_state_never_reports_stopping_when_worker_is_gone(tmp_path):
+    io = BlockingIO()
+    backend = Backend(tmp_path, io)
+    backend.engine.state = "stopping"
+    assert backend.engine.running is False
+    state = backend.state()["engine"]
+    assert state["running"] is False
+    assert state["state"] == "stopped"

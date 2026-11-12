@@ -954,3 +954,78 @@ STRINGS["uk"]["afk.reason_focus_lost"] = "Alt+Tab: анти-AFK на паузі 
 STRINGS["ru"]["afk.reason_focus_lost"] = "Alt+Tab: анти-AFK на паузе. Для продолжения вернись в игру и нажми клавишу паузы (резерв F10)."
 STRINGS["en"]["afk.reason_focus_lost"] = "Alt+Tab: anti-AFK paused. Return to Fortnite and press the chosen Pause key (F10 backup)."
 STRINGS["uk"]["afk.reason_focus_lost"] = "Alt+Tab: анти-AFK призупинено. Повернися у гру й натисни клавішу паузи (резерв F10)."
+
+# v1.4.1 beta: captured lobby buttons / match-HUD-gated Anti-AFK.
+STRINGS["ru"].update({
+    "tpl.role_lobby_play": "Лобби: кнопка «Играть»",
+    "tpl.role_lobby_ready": "Лобби: «Готов» / «Начать»",
+    "tpl.role_lobby_confirm": "Лобби: подтверждение",
+    "tpl.role_match_hud": "В матче: элемент HUD",
+    "afk.lobby_auto": "Запускать матч из лобби (по образцам)",
+    "afk.lobby_templates_help": "В разделе «Шаблоны» сохрани кнопки лобби и элемент интерфейса из матча. Без шаблона HUD Anti-AFK не продолжит действия после лобби.",
+    "afk.lobby_status": "Состояние лобби", "afk.lobby_clicks": "Нажатий",
+    "afk.start_phase": "Этап запуска",
+    "afk.lobby_hud_warning": "Нет образца HUD из матча. После нажатия кнопок программа будет ждать подтверждения входа в игру.",
+    "afk.reason_lobby_loading": "Лобби: ожидание загрузки",
+    "afk.reason_lobby_hud_required": "Сохрани образец HUD из матча",
+    "afk.reason_lobby_scanning": "Проверка экрана: Anti-AFK приостановлен",
+    "afk.reason_lobby_attention": "Кнопка не отвечает: автонажатия остановлены",
+    "afk.reason_lobby_button": "Кнопка лобби распознана: подтверждение совпадения",
+    "log.lobby_clicked": "Лобби: нажата {name} (точность {score})",
+    "log.lobby_match_confirmed": "Вход в матч подтверждён по HUD",
+})
+STRINGS["en"].update({
+    "tpl.role_lobby_play": "Lobby: Play button",
+    "tpl.role_lobby_ready": "Lobby: Ready / Start",
+    "tpl.role_lobby_confirm": "Lobby: confirmation",
+    "tpl.role_match_hud": "In-match HUD marker",
+    "afk.lobby_auto": "Auto-start from lobby (captured templates)",
+    "afk.lobby_templates_help": "Capture lobby buttons and an in-match HUD marker in Templates. Without a HUD marker, Anti-AFK won't resume after lobby.",
+    "afk.lobby_status": "Lobby status", "afk.lobby_clicks": "Clicks",
+    "afk.start_phase": "Start phase",
+    "afk.lobby_hud_warning": "Missing match HUD template. Waiting for confirmation before Anti-AFK.",
+    "afk.reason_lobby_loading": "Waiting for match load",
+    "afk.reason_lobby_hud_required": "Capture an in-match HUD marker",
+    "afk.reason_lobby_scanning": "Checking screen: inputs suspended",
+    "afk.reason_lobby_attention": "Lobby button not responding: auto-clicks stopped",
+    "afk.reason_lobby_button": "Lobby button recognized; verifying",
+    "log.lobby_clicked": "Lobby clicked {name} (confidence {score})",
+    "log.lobby_match_confirmed": "Match confirmed by HUD",
+})
+STRINGS["uk"].update({
+    "tpl.role_lobby_play": "Лобі: кнопка «Грати»",
+    "tpl.role_lobby_ready": "Лобі: «Готовий» / «Почати»",
+    "tpl.role_lobby_confirm": "Лобі: підтвердження",
+    "tpl.role_match_hud": "У матчі: елемент HUD",
+    "afk.lobby_auto": "Автозапуск матчу з лобі (за шаблонами)",
+    "afk.lobby_templates_help": "Збережіть кнопки лобі та HUD з матчу у «Шаблонах». Без HUD анти-AFK чекатиме підтвердження.",
+    "afk.lobby_status": "Стан лобі", "afk.lobby_clicks": "Натискань",
+    "afk.start_phase": "Етап запуску",
+    "afk.lobby_hud_warning": "Немає шаблона HUD з матчу. Очікування підтвердження.",
+    "afk.reason_lobby_loading": "Лобі: очікування завантаження",
+    "afk.reason_lobby_hud_required": "Збережіть зразок HUD матчу",
+    "afk.reason_lobby_scanning": "Перевірка екрана: дії призупинено",
+    "afk.reason_lobby_attention": "Кнопка не відповідає: автонатискання зупинено",
+    "afk.reason_lobby_button": "Кнопку лобі розпізнано: перевірка",
+    "log.lobby_clicked": "Лобі: натиснуто {name} (точність {score})",
+    "log.lobby_match_confirmed": "Вхід у матч підтверджено HUD",
+})
+
+STRINGS["ru"].update({
+    "state.lobby_wait": "Ожидание лобби/матча",
+    "state.lobby_button": "Проверка кнопки лобби",
+    "state.lobby_loading": "Загрузка после кнопки лобби",
+    "state.lobby_attention": "Лобби: требуется проверка",
+})
+STRINGS["en"].update({
+    "state.lobby_wait": "Waiting for lobby/match",
+    "state.lobby_button": "Validating lobby button",
+    "state.lobby_loading": "Loading after lobby action",
+    "state.lobby_attention": "Lobby needs attention",
+})
+STRINGS["uk"].update({
+    "state.lobby_wait": "Очікування лобі/матчу",
+    "state.lobby_button": "Перевірка кнопки лобі",
+    "state.lobby_loading": "Завантаження після кнопки лобі",
+    "state.lobby_attention": "Лобі: потрібна перевірка",
+})

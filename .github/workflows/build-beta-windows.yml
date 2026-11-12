@@ -59,7 +59,7 @@ jobs:
       - name: Upload beta installer (no public release)
         uses: actions/upload-artifact@v4
         with:
-          name: Fortnite-Pirate-Token-v1.4.0-Beta-Setup
+          name: Fortnite-Pirate-Token-v1.4.2-Beta-Setup
           path: release/*.exe
           if-no-files-found: error
           retention-days: 7

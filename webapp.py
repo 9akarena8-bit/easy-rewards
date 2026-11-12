@@ -27,7 +27,7 @@ UI = BASE / "ui" / "index.html"
 def main() -> int:
     hooks = Hooks()
     backend = Backend(DATA, winio.WinIO(), hooks)
-    backend.version = (BASE / "VERSION").read_text(encoding="utf-8").strip()
+    backend.set_build_version((BASE / "VERSION").read_text(encoding="utf-8").strip())
     if backend.release_mode:
         release_updater.cleanup_update_cache(backend.version)
     main_win = None

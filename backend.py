@@ -26,7 +26,7 @@ from merchant_service.license_client import LicenseClient
 import support_report
 import discord_notifications
 import webbrowser
-from core import ROLES, Config, Engine, best_match, imread_unicode, load_templates
+from core import ROLES, LOBBY_ROLES, LOBBY_BUTTON_ROLES, Config, Engine, best_match, imread_unicode, load_templates, template_role
 from i18n import LANGS, STRINGS
 from tracker import Tracker
 from reward_stats import RewardStats
@@ -44,7 +44,7 @@ NUM_LIMITS = {          # key: (type, lo, hi)
 # Reserve F6 input test, F9 counter and F10 pause. Distinct Start/Stop keys.
 AFK_HOTKEY_CHOICES = tuple(f"F{i}" for i in range(1, 13) if i not in (6, 9, 10))
 AFK_PAUSE_HOTKEY_CHOICES = ("F10",) + tuple(k for k in AFK_HOTKEY_CHOICES if k != "F12")
-BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "afk_launch_game", "afk_pause_on_alt_tab", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
+BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "lobby_autostart_enabled", "afk_launch_game", "afk_pause_on_alt_tab", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
          "afk_slide_enabled", "afk_camera_enabled", "afk_slot_enabled", "afk_pickaxe_enabled",
          "afk_grenade_enabled", "afk_weapon_enabled", "afk_replay_auto_detect")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
@@ -107,6 +107,23 @@ class Backend:
         self._control_sequence = 0
         self._control_action = "none"
         self._control_time = ""
+        self._start_guard = threading.Lock()
+        # Serialize slow Engine.start() calls across Stop -> Start. Without
+        # this lock, an old cancelled initializer can stop a newer session.
+        self._engine_start_guard = threading.Lock()
+        self._start_serial = 0
+        self._start_pending = False
+        self._start_workers = 0  # includes cancelled initializers still draining
+        self._start_phase = "idle"
+        self._start_error = ""
+        # Window enumeration can block under Windows. Never run it synchronously
+        # from pywebview's 800 ms state polling path.
+        self._game_lookup_lock = threading.Lock()
+        self._game_lookup_pending = False
+        self._game_lookup_known = False
+        self._game_lookup_last_at = 0.0
+        self._game_lookup_value = False
+        self._game_lookup_error = ""
         self.reward_stats = RewardStats(self.base / "rewards.json")
         self.payment_drafts = payment_hub.LocalInterestDrafts(self.base / "payment_interest_drafts.json")
         # Opt-in integration preview only; unset in production until the
@@ -137,13 +154,39 @@ class Backend:
         self._lock = threading.Lock()
         self._config_save_lock = threading.Lock()
         self.restart_requested = False
-        self.version = updater.local_version(self.base)
+        self.set_build_version(updater.local_version(self.base))
+
+    def set_build_version(self, version: str) -> None:
+        """Rebuild news after webapp resolves the bundled VERSION file."""
+        self.version = str(version).strip()
         self._bundled_news = [{"version": "1.4.0-beta",
             "title": "Fortnite Pirate Token v1.4.0 Beta — сборка для тестирования",
             "notes": ("Новый пиратский дизайн; Alt+Tab ставит Anti-AFK на паузу и требует продолжения, "
                       "настраиваемые горячие клавиши, запуск через Epic Launcher и улучшенный подкат. "
                       "Telegram Stars, карты, СБП, QR, перевод и скины — демо, без реальной оплаты. "
                       "Работа в Fortnite требует проверки на Windows.")}] if self.version == "1.4.0" else []
+        if self.version == "1.4.1":
+            self._bundled_news = [{
+                "version": "1.4.1-beta",
+                "title": "Fortnite Pirate Token v1.4.1 Beta — исправление запуска",
+                "notes": ("Запуск Anti-AFK теперь не блокирует интерфейс при долгом "
+                          "ответе Windows: запрос окна и активация выполняются отдельно. "
+                          "Добавлены диагностика этапа запуска и безопасная отмена Stop. "
+                          "В лобби доступны шаблоны Играть/Готов/Подтвердить и проверка HUD матча; "
+                          "пока HUD не распознан, Anti-AFK не действует. "
+                          "Beta требует проверки в Fortnite; оплаты выключены.")
+            }] + self._bundled_news
+        if self.version == "1.4.2":
+            self._bundled_news = [{
+                "version": "1.4.2-beta",
+                "title": "Fortnite Pirate Token v1.4.2 Beta — все исправления вместе",
+                "notes": ("Объединены обновления всех рабочих веток: исправлен Start → Stop → Start "
+                          "при долгой инициализации; поиск окна Fortnite не блокирует "
+                          "Python API и обновление интерфейса. Сохранены Alt+Tab, F12, "
+                          "подкат, распознавание лобби и подтверждение HUD перед Anti-AFK. "
+                          "Сохранены новости, дизайн, Telegram и демо-оплата. "
+                          "Требуется ручная проверка в Fortnite; реальные платежи отключены.")
+            }]
         self._release_news = list(self._bundled_news)
 
     # ------------------------------------------------------------ plumbing
@@ -266,7 +309,7 @@ class Backend:
         folder = self.templates_root / self.cfg.language
         if folder.is_dir():
             for p in folder.glob("*.png"):
-                role = p.stem.split("_", 1)[0].lower()
+                role = template_role(p.stem.lower())
                 if role in counts:
                     counts[role] += 1
         return counts
@@ -286,6 +329,37 @@ class Backend:
         self._tr_active = trs["active"]
         return trs
 
+    def _game_window_found_cached(self) -> bool:
+        """Return latest observation instantly; refresh OS window search in background."""
+        now = time.monotonic()
+        start_lookup = False
+        with self._game_lookup_lock:
+            if (not self._game_lookup_pending and
+                    (not self._game_lookup_known or
+                     now - self._game_lookup_last_at >= 1.0)):
+                self._game_lookup_pending = True
+                self._game_lookup_last_at = now
+                start_lookup = True
+            last_found = self._game_lookup_value
+        if start_lookup:
+            threading.Thread(target=self._refresh_game_window_found,
+                             name="game-lookup", daemon=True).start()
+        return last_found
+
+    def _refresh_game_window_found(self) -> None:
+        """At most one potentially slow Win32 search runs concurrently."""
+        try:
+            found = bool(getattr(self.io, "game_window_found", lambda: False)())
+            error = ""
+        except Exception as exc:
+            found = False
+            error = type(exc).__name__
+        with self._game_lookup_lock:
+            self._game_lookup_value = found
+            self._game_lookup_error = error
+            self._game_lookup_known = True
+            self._game_lookup_pending = False
+
     def state(self) -> dict:
         e = self.engine
         counts = self._template_counts()
@@ -298,9 +372,15 @@ class Backend:
             "discord_notifications": self.discord.status(),
             "controls": {"last": self._control_action,
                          "time": self._control_time,
-                         "sequence": self._control_sequence},
+                         "sequence": self._control_sequence,
+                         "start_pending": self._start_pending,
+                         "start_phase": self._start_phase,
+                         "start_error": self._start_error},
             "cfg": {k: getattr(self.cfg, k) for k in Config.__dataclass_fields__},
-            "engine": {"state": ("stopping" if e.stopping else "paused" if e.paused and e.running else e.state), "running": e.running, "paused": e.paused, "score": round(e.score, 3),
+            "engine": {"state": ("stopped" if not e.running and e.state == "stopping"
+                                 else "stopping" if e.stopping
+                                 else "paused" if e.paused and e.running else e.state),
+                       "running": e.running, "paused": e.paused, "score": round(e.score, 3),
                        "games": e.games, "cycles": e.cycles, "rewards": e.rewards, "runtime": int(e.runtime),
                        "history": self._history(),
                        "input_count": e.input_count, "last_input": e.last_input,
@@ -310,12 +390,20 @@ class Backend:
                        "probe_at": e.probe_at, "probe_target": e.probe_target,
                        "replay_count": e.replay_count, "replay_status": e.replay_status,
                        "replay_source": e.replay_source, "replay_attempts": e.replay_attempts,
-                       "focus_result": e.focus_result},
+                       "focus_result": e.focus_result,
+                       "lobby_state": e.lobby_state,
+                       "lobby_clicks": e.lobby_clicks,
+                       "lobby_last_button": e.lobby_last_button,
+                       "lobby_buttons_configured": sum(counts.get(role, 0) for role in LOBBY_BUTTON_ROLES),
+                       "lobby_hud_configured": counts.get("match_hud", 0) > 0},
             "reward": {"session": e.rewards, "total": self.reward_stats.total},
             "diagnostics": {
                 "foreground_title": (self.io.foreground_title() if hasattr(self.io, "foreground_title") else ""),
                 "game_active": bool(self.io.game_in_foreground()),
-                "game_found": bool(self.io.game_window_found()) if hasattr(self.io, "game_window_found") else False,
+                "game_found": self._game_window_found_cached(),
+                "game_lookup_pending": self._game_lookup_pending,
+                "game_lookup_known": self._game_lookup_known,
+                "game_lookup_error": self._game_lookup_error,
                 "foreground_process": (self.io.foreground_process() if hasattr(self.io, "foreground_process") else ""),
                 "game_title": str(getattr(self.io, "window_title", "Fortnite")),
                 "template_count": len(e.templates),
@@ -338,10 +426,10 @@ class Backend:
 
     # ------------------------------------------------------------ engine controls
     def start(self) -> dict:
-        """Start the engine; optionally request Fortnite launch via Epic protocol.
+        """Return promptly: the v1.4.0 report shows a command before any engine log.
 
-        Dispatching a URI is not proof that the game has started. The engine
-        waits for a verified foreground Fortnite window before sending input.
+        Windows game discovery/focus and template initialization must never hold
+        the pywebview start call, otherwise the UI times out after five seconds.
         """
         self._control_received("start")
         if self.engine.running:
@@ -350,26 +438,92 @@ class Backend:
             if was_paused and not resumed:
                 return {"ok": False, "reason": "return_to_game"}
             return {"ok": True, "reason": "resumed" if was_paused else "already_running"}
-        if self.cfg.afk_launch_game and not getattr(self.io, "game_window_found", lambda: False)():
-            launcher = getattr(self.io, "launch_game", None)
-            if callable(launcher):
-                try:
-                    if not launcher():
-                        return {"ok": False, "reason": "epic_launcher_unavailable"}
-                except (OSError, ValueError) as exc:
-                    return {"ok": False, "reason": "epic_launch_error", "detail": str(exc)[:180]}
+        with self._start_guard:
+            # A cancelled initializer may still be draining, but a new Start
+            # must be queued while the _engine_start_guard serializes workers.
+            if self._start_pending and self._start_phase != "cancelled":
+                return {"ok": True, "reason": "start_queued"}
+            self._start_serial += 1
+            generation = self._start_serial
+            self._start_workers += 1
+            self._start_pending = True
+            self._start_phase = "queued"
+            self._start_error = ""
+        threading.Thread(target=self._start_in_background, args=(generation,),
+                         name="engine-launch", daemon=True).start()
+        return {"ok": True, "reason": "start_queued"}
+
+    def _start_in_background(self, generation: int) -> None:
+        """Initialize one engine generation at a time; old Stop wins."""
+        try:
+            # The old generation may still be blocked inside template loading
+            # when Stop and a fresh Start arrive. Waiting here does not block
+            # the Python GUI bridge. It prevents overlapping engine startups.
+            with self._engine_start_guard:
+                with self._start_guard:
+                    if generation != self._start_serial:
+                        return
+                    self._start_phase = "initializing_engine"
                 self.engine.start()
-                return {"ok": True, "reason": "launch_requested"}
-        # Focus the already-running game BEFORE starting the worker. This
-        # removes a race where a quick Alt+Tab occurs after window activation
-        # but before the engine has seen Fortnite once.
-        if self.cfg.auto_focus and getattr(self.io, "game_window_found", lambda: False)():
-            try:
+                with self._start_guard:
+                    cancelled = generation != self._start_serial
+                if cancelled:
+                    self.engine.stop()
+                    return
+                if not self.engine.running:
+                    with self._start_guard:
+                        if generation == self._start_serial:
+                            self._start_phase = "not_started"
+                            self._start_error = "engine_disabled_or_not_started"
+                    return
+                with self._start_guard:
+                    cancelled = generation != self._start_serial
+                    if not cancelled:
+                        self._start_phase = "waiting_for_fortnite"
+                if cancelled:
+                    self.engine.stop()
+                    return
+                threading.Thread(target=self._activate_game_after_start,
+                                 args=(generation,), name="game-activation",
+                                 daemon=True).start()
+        except Exception as exc:
+            with self._start_guard:
+                if generation == self._start_serial:
+                    self._start_phase = "start_failed"
+                    self._start_error = type(exc).__name__ + ": " + str(exc)[:180]
+            self.log("log.error", err="start: " + type(exc).__name__)
+        finally:
+            with self._start_guard:
+                self._start_workers = max(0, self._start_workers - 1)
+                # Never report cancellation completed while its worker still
+                # executes, and never clear a newer generation's pending flag.
+                if generation == self._start_serial or (
+                        self._start_workers == 0 and self._start_phase == "cancelled"):
+                    self._start_pending = False
+
+    def _activate_game_after_start(self, generation: int) -> None:
+        """Optional OS focus/launcher request cannot block Python API or start."""
+        try:
+            found = bool(getattr(self.io, "game_window_found", lambda: False)())
+            with self._start_guard:
+                if generation != self._start_serial or not self.engine.running:
+                    return
+            if found and self.cfg.auto_focus:
                 self.io.focus_game()
-            except (OSError, RuntimeError):
-                pass
-        self.engine.start()
-        return {"ok": True, "reason": "started"}
+            elif not found and self.cfg.afk_launch_game:
+                launch = getattr(self.io, "launch_game", None)
+                if callable(launch) and not launch():
+                    with self._start_guard:
+                        if generation == self._start_serial:
+                            self._start_error = "epic_launcher_unavailable"
+        except Exception as exc:
+            with self._start_guard:
+                if generation == self._start_serial:
+                    self._start_error = "window_activation: " + type(exc).__name__
+        finally:
+            with self._start_guard:
+                if generation == self._start_serial and self.engine.running:
+                    self._start_phase = "engine_running"
 
     def input_probe_delayed(self, target: str = "fortnite") -> dict:
         """Schedule a test while the user switches to the target window."""
@@ -391,6 +545,12 @@ class Backend:
 
     def stop(self) -> None:
         self._control_received("stop")
+        with self._start_guard:
+            self._start_serial += 1
+            # Keep pending until the cancelled worker actually exits.
+            # A subsequent Start is allowed when phase == cancelled.
+            self._start_pending = self._start_workers > 0
+            self._start_phase = "cancelled"
         self.engine.stop()
 
     def pause(self) -> dict:
@@ -473,7 +633,7 @@ class Backend:
         out = []
         folder = self.templates_root / self.cfg.language
         for p in sorted(folder.glob("*.png")) if folder.is_dir() else []:
-            role = p.stem.split("_", 1)[0].lower()
+            role = template_role(p.stem.lower())
             img = imread_unicode(p)
             if role not in ROLES or img is None or not img.size:
                 continue
@@ -525,6 +685,8 @@ class Backend:
         if x2 - x < 8 or y2 - y < 8:
             return {"ok": False, "error": "small"}
         crop = self._shot[y:y2, x:x2]
+        if role in LOBBY_ROLES and float(np.std(crop)) < 7.0:
+            return {"ok": False, "error": "low_detail_template"}
         path = self.templates_root / self.cfg.language / f"{role}_{safe_name(name)}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
         ok, buf = cv2.imencode(".png", crop)
