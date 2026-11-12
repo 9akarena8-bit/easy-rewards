@@ -24,11 +24,20 @@ This is an **unofficial** community utility, not affiliated with Epic Games or F
    If not, note whether the Epic Launcher is installed, and copy the error text.
 6. With Fortnite open, check that Start focuses the verified game or displays waiting state.
 7. Press the configured Stop key with the launcher minimized. Confirm engine status is Stopped. Restart and press F12: emergency Stop must work even after rebinding.
-8. Repeat with Start/Stop buttons in the app. Try Pause and inspect the diagnostics panel.
-9. Verify that settings are kept after closing and reopening the app.
-10. On the Anti-AFK page, click **Отчёт для тестирования**. The launcher opens
+8. Open Fortnite, press Start, and Alt+Tab to any other window. The engine must
+   enter **Paused / focus_lost** without bringing Fortnite back by itself.
+   Return to Fortnite. Nothing must resume until **F10** (or Start shortcut)
+   is pressed while Fortnite has focus.
+9. Try the Pause button in the launcher while the game is not foreground: a
+   clear "return to Fortnite" message must appear, and no input is sent to the
+   launcher or other applications. Test F12 during the pause.
+10. Disable the "Auto-pause on Alt+Tab" setting and verify input remains
+    blocked outside Fortnite and Fortnite focus is not stolen. Re-enable it.
+11. Repeat with Start/Stop buttons in the app. Try Pause and inspect the diagnostics panel.
+12. Verify that settings are kept after closing and reopening the app.
+13. On the Anti-AFK page, click **Отчёт для тестирования**. The launcher opens
     Support and prepares a local text report for review and copying.
-11. Report Windows version, app version, reproduction steps, screenshot, and diagnostics
+14. Report Windows version, app version, reproduction steps, screenshot, and diagnostics
     with personal details/credentials removed. No diagnostics are uploaded automatically.
 
 ## Important limitations
