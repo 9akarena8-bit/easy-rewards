@@ -140,3 +140,18 @@ def test_beta_gui_contains_live_hotkeys_and_existing_controls():
     assert 'HotkeyPoller(hotkey_bindings)' in shell
     assert 'data-act="afk_report"' in js
     assert 'if (a === "support_report" || a === "afk_report")' in js
+
+
+def test_epic_capability_and_dispatch_status_do_not_claim_game_is_open(tmp_path):
+    io = FakeEpicIO()
+    io.epic_launcher_available = lambda: True
+    backend = Backend(tmp_path, io)
+    try:
+        assert backend.state()["diagnostics"]["epic_launcher_available"] is True
+        assert backend.start()["reason"] == "start_queued"
+        assert until(lambda: backend.state()["controls"]["launch_status"] == "requested")
+        assert backend.state()["diagnostics"]["game_active"] is False
+        assert io.launch_count == 1
+    finally:
+        backend.stop()
+    assert backend.state()["controls"]["launch_status"] == "idle"

@@ -70,3 +70,32 @@ def test_window_lookup_error_does_not_crash_state(tmp_path):
     result = b.state()["diagnostics"]
     assert result["game_found"] is False
     assert result["game_lookup_error"] == "OSError"
+
+
+def test_manual_update_check_deduplicates_and_keeps_state_responsive(tmp_path, monkeypatch):
+    import backend as module
+
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+
+    def latest(version):
+        calls.append(version)
+        entered.set()
+        release.wait(5)
+        return {"version": "1.4.3", "notes": "Patch notes"}
+
+    monkeypatch.setattr(module.release_updater, "latest_release", latest)
+    io = GateIO()
+    io.release.set()
+    backend = Backend(tmp_path, io)
+    backend.release_mode = True
+    try:
+        assert backend.update_check_async()["status"] == "checking"
+        assert entered.wait(1)
+        assert backend.update_check_async()["status"] == "checking"
+        assert backend.state()["update"]["status"] == "checking"
+    finally:
+        release.set()
+    assert wait_for(lambda: backend.state()["update"]["status"] == "available")
+    assert backend.state()["update"]["notes"] == "Patch notes"
+    assert len(calls) == 1

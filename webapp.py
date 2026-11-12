@@ -102,7 +102,6 @@ def main() -> int:
         return {
             "F6": backend.engine.input_probe,
             "F9": backend.hotkey_count,
-            "F10": backend.pause,
             backend.cfg.afk_start_hotkey: backend.start,
             backend.cfg.afk_stop_hotkey: backend.stop,
             backend.cfg.afk_pause_hotkey: backend.pause,
@@ -110,7 +109,8 @@ def main() -> int:
             "F12": backend.stop,  # unconditional emergency Stop
         }
 
-    winio.HotkeyPoller(hotkey_bindings).start()
+    hotkeys = winio.HotkeyPoller(hotkey_bindings)
+    hotkeys.start()
 
     update_shutdown = threading.Event()
 
@@ -133,6 +133,7 @@ def main() -> int:
         webview.start()
     finally:
         update_shutdown.set()
+        hotkeys.close()
         backend.shutdown()
 
     if backend.restart_requested:
