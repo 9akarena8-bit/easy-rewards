@@ -225,7 +225,7 @@
   };
   PAGE.home = function() {
     const e = ST.engine;
-    return `<section class="gold-hero"><div class="gold-hero-copy">
+    return `<div class="pirate-home"><section class="gold-hero"><div class="gold-hero-copy">
       <div class="gold-hero-kicker"><span>✦</span> ${ui("ТВОЙ ПОМОЩНИК В FORTNITE", "YOUR FORTNITE COMPANION", "ТВІЙ ПОМІЧНИК У FORTNITE")}</div>
       <h2>${ui("Добро пожаловать в", "Welcome to", "Ласкаво просимо до")}<br><span class="launcher-wordmark">Fortnite Pirate Token</span></h2>
       <p class="gold-slogan">${ui("Получай награды — не трать силы и нервы.", "Earn rewards — save your time and energy.", "Отримуй нагороди — бережи час і сили.")}</p>
@@ -233,10 +233,7 @@
        <button class="btn gold-stop" data-act="stop" ${!e.running && !ST.controls?.start_pending ? "disabled" : ""}>■ ${ui("Остановить", "Stop", "Зупинити")}</button>
        <button class="btn gold-pause" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} ${e.paused ? t("btn.resume") : t("btn.pause")}</button></div>
       <div class="gold-hero-meta"><span class="gold-status" data-live="launcher-engine-status">${safe(launcherEngineStatus())}</span><span class="gold-status" data-live="launcher-game-status">${safe(launcherGameStatus())}</span><span class="gold-version">${ui("Версия", "Version", "Версія")} ${safe(ST.version)}</span></div>
-    </div><div class="gold-hero-visual" aria-hidden="true">
-      <div class="gold-hero-halo"></div><img class="gold-chest" src="hero_chest.svg" alt="">
-      <img class="gold-token token-a" src="pirate_token.png" alt=""><img class="gold-token token-b" src="pirate_token.png" alt=""><img class="gold-token token-c" src="pirate_token.png" alt="">
-      <span class="gold-spark spark-a">✦</span><span class="gold-spark spark-b">✦</span></div></section>
+    </div></section>
     <div class="gold-dashboard"><div class="gold-dashboard-main">${newsMarkup()}</div>
       <div class="gold-dashboard-side">${subCard()}
         <section class="card gold-metrics">
@@ -247,7 +244,7 @@
           <button class="btn sm" data-page="support">${t("nav.support")}</button>
         </section>
       </div>
-    </div>`;
+    </div></div>`;
   };
   PAGE.updates = function() {
     return newsMarkup(true) + `<div class="gold-updater">${originalUpdates()}</div>`;

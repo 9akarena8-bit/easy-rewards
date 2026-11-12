@@ -164,3 +164,65 @@ body:not(.mini){overflow:hidden;display:flow-root}
   .launcher-settings>.grid>.launcher-advanced{grid-column:1/-1;grid-row:3;margin-block:0}
   .launcher-settings>.launcher-panel{grid-column:2}
 }
+
+/* The home artwork spans the welcome panel and the cards below it. */
+.pirate-home {
+  --scene-panel: rgba(9, 14, 42, .86);
+  min-height: min(65vh, 590px);
+  padding: clamp(12px, 2vw, 24px);
+  border: 1px solid rgba(255, 205, 93, .56);
+  border-radius: 20px;
+  background: #101437 url("pirate-home.webp") right top / 100% auto no-repeat;
+  box-shadow: 0 14px 45px rgba(3, 6, 24, .48);
+}
+.pirate-home .gold-hero {
+  min-height: 0;
+  padding: clamp(15px, 1.7vw, 22px);
+  margin-bottom: 14px;
+  background: linear-gradient(95deg, var(--scene-panel) 15%, rgba(12, 20, 62, .66) 55%, transparent 100%);
+  box-shadow: inset 0 1px rgba(255, 235, 165, .15);
+}
+.pirate-home .gold-hero-copy {
+  flex-basis: 69%;
+  max-width: 660px;
+}
+.pirate-home .gold-dashboard {
+  width: 71%;
+  grid-template-columns: minmax(0, 1.3fr) minmax(180px, 1fr);
+  gap: 12px;
+}
+.pirate-home .gold-dashboard-side { gap: 10px; }
+.pirate-home .gold-news-icon { width: 44px; height: 44px; font-size: 24px; }
+.pirate-home .gold-news-item { gap: 9px; }
+.pirate-home .gold-dashboard .card {
+  background: linear-gradient(145deg, rgba(25, 29, 76, .90), var(--scene-panel));
+  backdrop-filter: blur(9px);
+  color: #fff8e9;
+}
+.pirate-home .gold-dashboard .mute { color: #c7c6e5; }
+
+:root:not([data-theme="light"]) body:not(.mini) .page:not([data-current-page="home"]) {
+  background:
+    linear-gradient(150deg, rgba(25, 17, 49, .96), rgba(11, 14, 38, .89)),
+    url("pirate_seascape.svg") center / cover no-repeat;
+}
+:root:not([data-theme="light"]) body:not(.mini) .page:not([data-current-page="home"]) .card {
+  background: linear-gradient(145deg, rgba(44, 32, 77, .94), rgba(19, 19, 47, .97));
+  border-color: rgba(255, 202, 99, .33);
+}
+@media (max-width: 1000px) {
+  .pirate-home { background-size: auto 490px; background-position: right top; }
+  .pirate-home .gold-dashboard { width: 70%; grid-template-columns: 1fr; }
+}
+@media (max-width: 660px) {
+  .pirate-home {
+    background-size: auto 310px;
+    background-position: right top;
+  }
+  .pirate-home .gold-hero {
+    min-height: 250px;
+    background: linear-gradient(90deg, rgba(9, 14, 42, .94), rgba(9, 14, 42, .55) 70%, transparent);
+  }
+  .pirate-home .gold-hero-copy { flex-basis: 100%; }
+  .pirate-home .gold-dashboard { width: 100%; }
+}
