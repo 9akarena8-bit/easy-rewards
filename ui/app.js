@@ -12,12 +12,12 @@ const t = (k, kw = {}) => (S[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "
 const fmtT = seconds => { const s = Math.floor(Math.max(0, Number(seconds) || 0)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(n => String(n).padStart(2, "0")).join(":"); };
 const num = n => Number(n).toLocaleString();
 const HOTKEY_OPTIONS = ["F1", "F2", "F3", "F4", "F5", "F7", "F8", "F11", "F12"];
-const hotkeyPicker = (key, selected) => `<select class="in hotkey-picker" data-cfg="${key}">${HOTKEY_OPTIONS.map(x => `<option value="${x}" ${selected === x ? "selected" : ""}>${x}</option>`).join("")}</select>`;
+const hotkeyPicker = (key, selected) => `<select class="in hotkey-picker" data-cfg="${key}">${HOTKEY_OPTIONS.filter(x => key !== "afk_start_hotkey" || x !== "F12").map(x => `<option value="${x}" ${selected === x ? "selected" : ""}>${x}</option>`).join("")}</select>`;
 const hotkeySummary = () => `${ST?.cfg?.afk_start_hotkey || "F7"} ${controlUi("запуск", "start", "запуск")} · ${ST?.cfg?.afk_stop_hotkey || "F8"} ${controlUi("стоп", "stop", "стоп")} · F10 ${controlUi("пауза", "pause", "пауза")}`;
 const hotkeyHelp = () => controlUi(
-  "Горячие клавиши работают даже в свернутом лаунчере. F6, F9 и F10 зарезервированы; запуск и остановка должны различаться.",
-  "Global shortcuts work while the launcher is minimized. F6, F9 and F10 are reserved; Start and Stop must differ.",
-  "Глобальні клавіші працюють зі згорнутим лаунчером. F6, F9 і F10 зарезервовані; запуск і зупинка мають відрізнятися."
+  "Кнопки работают при свёрнутом лаунчере. F12 всегда экстренно останавливает анти-AFK. F6, F9, F10 зарезервированы; кнопки запуска и остановки должны различаться.",
+  "Shortcuts work while minimized. F12 is always the emergency Stop. F6, F9 and F10 are reserved; Start and Stop must differ.",
+  "Клавіші працюють у згорнутому вікні. F12 завжди екстрено зупиняє анти-AFK. F6, F9, F10 зарезервовані; запуск і зупинка мають відрізнятися."
 );
 const tog = (k, on) => `<div class="tog ${on ? "on" : ""}" data-tog="${k}"></div>`;
 function toast(m) { clearTimeout(toastT); document.querySelectorAll(".toast").forEach(e => e.remove());
