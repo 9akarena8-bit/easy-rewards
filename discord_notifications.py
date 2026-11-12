@@ -7,6 +7,7 @@ All network calls happen in a daemon worker, never in the engine/control path.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
 import threading
@@ -86,27 +87,37 @@ class DiscordNotifications:
             candidate = url or self._url
             if enabled and not candidate:
                 return {"ok": False, "error": "Enter a Discord Webhook URL first"}
-            previous = (self._url, self._enabled)
-            self._url = candidate
-            self._enabled = enabled
+            # Atomic save: failed writes must preserve the last good settings.
+            temporary = self.path.with_name(
+                f".{self.path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+            )
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
-                self.path.write_text(json.dumps({"webhook_url": candidate,
-                                                  "enabled": enabled}), encoding="utf-8")
+                temporary.write_text(json.dumps({
+                    "webhook_url": candidate,
+                    "enabled": enabled,
+                }), encoding="utf-8")
+                os.replace(temporary, self.path)
             except OSError:
-                self._url, self._enabled = previous
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
                 return {"ok": False, "error": "Cannot save local Discord settings"}
+            self._url = candidate
+            self._enabled = enabled
         return {"ok": True, **self.status()}
 
     def clear(self) -> dict:
         with self._lock:
-            self._url = ""
-            self._enabled = False
-            self._last_error = ""
             try:
                 self.path.unlink(missing_ok=True)
             except OSError:
+                # The secret remains on disk; do not claim we disconnected.
                 return {"ok": False, "error": "Cannot remove local Discord settings"}
+            self._url = ""
+            self._enabled = False
+            self._last_error = ""
         return {"ok": True, **self.status()}
 
     def notify(self, key: str, *, test: bool = False, runtime_seconds: int | None = None) -> bool:
