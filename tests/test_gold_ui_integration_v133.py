@@ -39,5 +39,5 @@ def test_no_gold_edition_branding_and_subscription_not_live():
     assert 'const remaining = ()' in source
     assert (ROOT / "subscription_preview.py").exists()
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    assert re.fullmatch(r"\\d+\\.\\d+\\.\\d+", version)
+    assert re.fullmatch(r"\d+\.\d+\.\d+", version)
     assert f'#define AppVersion "{version}"' in (ROOT / "installer.iss").read_text(encoding="utf-8")
