@@ -484,9 +484,17 @@ class Engine:
             elif action == "sprint_jump":
                 keys("w", "shift", "space"); label = "W+SHIFT+SPACE"
             elif action == "slide":
-                keys("w", "shift", "ctrl"); label = "W+SHIFT+CTRL"
+                if hasattr(self.io, "slide_sequence"):
+                    self.io.slide_sequence(hold, False, should_abort)
+                else:
+                    keys("w", "shift", "ctrl")  # legacy injected IO adapters
+                label = "SPRINT → SLIDE"
             elif action == "slide_jump":
-                keys("w", "shift", "ctrl", "space"); label = "W+SHIFT+CTRL+SPACE"
+                if hasattr(self.io, "slide_sequence"):
+                    self.io.slide_sequence(hold, True, should_abort)
+                else:
+                    keys("w", "shift", "ctrl", "space")  # legacy IO adapters
+                label = "SPRINT → SLIDE → JUMP"
             elif action == "yaw":
                 angle = random.randint(25, 360)
                 direction = random.choice((-1, 1))
