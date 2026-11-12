@@ -406,10 +406,12 @@ class Backend:
                             self._start_error = "engine_disabled_or_not_started"
                     return
                 with self._start_guard:
-                    if generation != self._start_serial:
-                        self.engine.stop()
-                        return
-                    self._start_phase = "waiting_for_fortnite"
+                    cancelled = generation != self._start_serial
+                    if not cancelled:
+                        self._start_phase = "waiting_for_fortnite"
+                if cancelled:
+                    self.engine.stop()
+                    return
                 threading.Thread(target=self._activate_game_after_start,
                                  args=(generation,), name="game-activation",
                                  daemon=True).start()
