@@ -44,6 +44,8 @@ BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guid
          "afk_grenade_enabled", "afk_weapon_enabled", "afk_replay_auto_detect")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
         "theme": ("light", "dark"), "ui_language": LANGS}
+HOTKEY_FIELDS = ("hotkey_start", "hotkey_stop", "hotkey_pause")
+HOTKEY_ALLOWED = frozenset(f"F{i}" for i in range(1, 13)) - {"F6", "F9"}
 SHOT_MAX_W = 1600
 
 
@@ -59,6 +61,8 @@ class Hooks:
     close_mini = None
     save_dialog = None      # (suggested_name) -> path | None
     open_dialog = None      # () -> path | None
+    hotkeys_changed = None  # () -> None; safely refresh the global hotkey map
+    focus_on_start = None   # () -> None; minimize launcher then focus an existing game
 
 
 class Backend:
@@ -256,6 +260,16 @@ class Backend:
     def start(self) -> None:
         self._control_received("start")
         self.engine.start()
+        # The UI click leaves the launcher in the foreground. Request focus
+        # for an existing verified game window; do not send blind keystrokes.
+        if (self.engine.running and self.cfg.auto_focus and
+                callable(self.hooks.focus_on_start)):
+            try:
+                if (not self.io.game_in_foreground() and
+                        hasattr(self.io, "game_window_found") and self.io.game_window_found()):
+                    self.hooks.focus_on_start()
+            except Exception as exc:
+                self.engine.focus_result = "error: " + repr(exc)
 
     def input_probe_delayed(self, target: str = "fortnite") -> dict:
         """Schedule a test while the user switches to the target window."""
@@ -304,6 +318,7 @@ class Backend:
     def set_config(self, patch: dict) -> dict:
         """Apply validated settings. Returns {"ok": bool, "rejected": [keys]}."""
         rejected = []
+        old_hotkeys = tuple(getattr(self.cfg, k) for k in HOTKEY_FIELDS)
         for k, v in (patch or {}).items():
             try:
                 if k in NUM_LIMITS:
@@ -311,6 +326,12 @@ class Backend:
                     setattr(self.cfg, k, max(lo, min(hi, typ(v))))
                 elif k in BOOLS:
                     setattr(self.cfg, k, bool(v))
+                elif k in HOTKEY_FIELDS:
+                    key = str(v).strip().upper()
+                    others = {getattr(self.cfg, other) for other in HOTKEY_FIELDS if other != k}
+                    if key not in HOTKEY_ALLOWED or key in others:
+                        raise ValueError("invalid or duplicate shortcut")
+                    setattr(self.cfg, k, key)
                 elif k in STRS:
                     if v not in STRS[k]:
                         raise ValueError(k)
@@ -336,6 +357,9 @@ class Backend:
             else:
                 self.cfg.afk_pause_min = self.cfg.afk_pause_max
         self._save_cfg()
+        if (old_hotkeys != tuple(getattr(self.cfg, k) for k in HOTKEY_FIELDS) and
+                callable(self.hooks.hotkeys_changed)):
+            self.hooks.hotkeys_changed()
         return {"ok": not rejected, "rejected": rejected}
 
     # ------------------------------------------------------------ templates
