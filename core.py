@@ -139,12 +139,8 @@ class Config:
             setattr(cfg, name, value)
         if cfg.afk_pause_min > cfg.afk_pause_max:
             cfg.afk_pause_min, cfg.afk_pause_max = cls().afk_pause_min, cls().afk_pause_max
-        # Never accept duplicate or forbidden shortcuts from a hand-edited config.
-        keys = [cfg.afk_start_hotkey, cfg.afk_stop_hotkey, cfg.afk_pause_hotkey]
-        if (len(set(keys)) != 3 or
-                cfg.afk_start_hotkey == "F12" or cfg.afk_stop_hotkey == "F10" or
-                cfg.afk_pause_hotkey == "F12"):
-            cfg.afk_start_hotkey, cfg.afk_stop_hotkey, cfg.afk_pause_hotkey = "F7", "F8", "F10"
+        # Backend checks collisions and preserves a valid Stop binding,
+        # including F12 emergency stop. Config.load only validates input types.
         return cfg
 
     def save(self, path: Path) -> None:
