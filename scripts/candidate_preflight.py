@@ -40,6 +40,24 @@ def source_sha(root: Path) -> str | None:
         return None
 
 
+
+def git_worktree_clean(root: Path) -> bool | None:
+    """Reject staged, unstaged, or untracked source changes at release time.
+
+    HEAD alone is not enough: the installer could be built from edited source
+    while still claiming the previous Git SHA. Git honors .gitignore.
+    """
+    try:
+        p = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain=v1",
+             "--untracked-files=normal"],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+        return not bool(p.stdout.strip())
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+
+
 def inspect(root: Path, expected_sha: str | None = None) -> dict:
     root = root.resolve()
     results = []
@@ -61,6 +79,11 @@ def inspect(root: Path, expected_sha: str | None = None) -> dict:
     if expected_sha:
         results.append({"id": "expected_source_sha", "file": ".git", "ok": sha_ok,
                         "reason": "found" if sha_ok else "sha_mismatch_or_git_unavailable"})
+        clean = git_worktree_clean(root)
+        results.append({"id": "clean_worktree", "file": ".git", "ok": clean is True,
+                        "reason": "clean" if clean is True else
+                                  "dirty_worktree" if clean is False else
+                                  "git_status_unavailable"})
     return {"source_sha": sha, "expected_source_sha": expected_sha,
             "passed": all(item["ok"] for item in results), "checks": results,
             "limitations": "Static markers only; manually test WebView2, Windows, game, privacy, and demo entitlement."}
