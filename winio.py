@@ -5,7 +5,9 @@ The input layer never installs a keyboard hook and releases held keys on excepti
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
+import winreg
 import threading
 import time
 from ctypes import wintypes
@@ -60,7 +62,7 @@ MOUSEEVENTF_MOVE = 0x0001
 SCANCODES = {"w": 0x11, "a": 0x1E, "s": 0x1F, "d": 0x20, " ": 0x39,
              "space": 0x39, "shift": 0x2A, "ctrl": 0x1D, "y": 0x15,
              "1": 0x02, "2": 0x03, "3": 0x04, "4": 0x05, "5": 0x06, "6": 0x07}
-VK = {"F6": 0x75, "F7": 0x76, "F8": 0x77, "F9": 0x78, "F10": 0x79}
+VK = {f"F{i}": 0x6F + i for i in range(1, 13)}
 
 
 class KEYBDINPUT(ctypes.Structure):
@@ -100,6 +102,27 @@ def _mouse(flags: int) -> None:
 
 class WinIO:
     window_title = "Fortnite"
+    EPIC_FORTNITE_URI = (
+        "com.epicgames.launcher://apps/"
+        "fn%3A4fe75bbc5a674f4f9b356b5c90567da5%3AFortnite"
+        "?action=launch&silent=true"
+    )
+
+    def launch_game(self) -> bool:
+        """Request the user's installed Epic Launcher to start Fortnite.
+
+        No direct process injection, authentication or anti-cheat interaction.
+        Returns protocol-dispatch status, not a claim that Fortnite is ready.
+        """
+        if self.game_window_found():
+            return self.focus_game() or self.game_window_found()
+        try:
+            with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "com.epicgames.launcher"):
+                pass
+        except OSError:
+            return False
+        os.startfile(self.EPIC_FORTNITE_URI)
+        return True
 
     def grab(self) -> np.ndarray:
         image = ImageGrab.grab()  # foreground primary display in borderless windowed mode
@@ -348,25 +371,35 @@ class WinIO:
 
 
 class HotkeyPoller(threading.Thread):
-    """Global shortcuts using GetAsyncKeyState edge detection; no key recording."""
+    """Editable global function-key shortcuts without keyboard hooks.
 
-    def __init__(self, bindings: dict[str, Callable[[], None]]):
+    Accept a mapping or a mapping-producing callable so changes to settings
+    take effect immediately and without restarting the launcher.
+    """
+
+    def __init__(self, bindings: dict[str, Callable[[], None]] |
+                 Callable[[], dict[str, Callable[[], None]]]):
         super().__init__(daemon=True, name="hotkeys")
-        self.bindings = {VK[k]: cb for k, cb in bindings.items()}
+        self.bindings = bindings
 
     def run(self) -> None:
-        prev = {vk: False for vk in self.bindings}
+        prev = {vk: False for vk in VK.values()}
         while True:
-            for vk, cb in self.bindings.items():
+            try:
+                configured = self.bindings() if callable(self.bindings) else self.bindings
+                active = {VK[key]: cb for key, cb in configured.items() if key in VK}
+            except Exception:
+                active = {}
+            # Update edge state for ALL function keys, including currently unused
+            # keys. Rebinding a held key must never cause a surprise press.
+            for vk in prev:
                 down = bool(user32.GetAsyncKeyState(vk) & 0x8000)
-                if down and not prev[vk]:
-                    # Never execute callbacks on the polling thread. A slow
-                    # screenshot/probe/start would otherwise block F8 and F10.
+                cb = active.get(vk)
+                if down and not prev[vk] and cb is not None:
                     def invoke(callback=cb):
                         try:
                             callback()
                         except Exception:
-                            # Keep the global hotkey poller alive on failures.
                             import traceback
                             traceback.print_exc()
                     threading.Thread(target=invoke, name=f"hotkey-{vk}",

@@ -39,7 +39,10 @@ NUM_LIMITS = {          # key: (type, lo, hi)
     "afk_pause_max": (float, 0.2, 10.0),
     "afk_camera_pixels_360": (float, 100.0, 12000.0),
 }
-BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
+# Reserve F6 input test, F9 counter and F10 pause. Distinct Start/Stop keys.
+AFK_HOTKEY_CHOICES = tuple(f"F{i}" for i in range(1, 13) if i not in (6, 9, 10))
+AFK_PAUSE_HOTKEY_CHOICES = ("F10",) + tuple(k for k in AFK_HOTKEY_CHOICES if k != "F12")
+BOOLS = ("require_foreground", "auto_focus", "afk_enabled", "afk_launch_game", "afk_pause_on_alt_tab", "auto_update", "guide_dismissed", "treasure_auto_boost", "afk_extra_enabled", "afk_sequence_enabled", "afk_jump_enabled", "afk_sprint_enabled",
          "afk_slide_enabled", "afk_camera_enabled", "afk_slot_enabled", "afk_pickaxe_enabled",
          "afk_grenade_enabled", "afk_weapon_enabled", "afk_replay_auto_detect")
 STRS = {"language": ("ru", "en", "uk", "de", "fr", "es", "pt", "pl", "tr", "it", "ja", "ko", "zh", "ar"),
@@ -80,6 +83,20 @@ class Backend:
         self.cfg_path = self.base / "config.json"
         self.templates_root = self.base / "templates"
         self.cfg = Config.load(self.cfg_path)
+        # Never let a malformed/old config disable emergency Stop or bind
+        # reserved F12 as Start. Settings can also be edited outside the UI.
+        start_key = str(self.cfg.afk_start_hotkey).upper()
+        stop_key = str(self.cfg.afk_stop_hotkey).upper()
+        if start_key not in AFK_HOTKEY_CHOICES or start_key == "F12":
+            start_key = "F7"
+        if stop_key not in AFK_HOTKEY_CHOICES or stop_key == start_key:
+            stop_key = "F8" if start_key != "F8" else "F12"
+        pause_key = str(self.cfg.afk_pause_hotkey).upper()
+        if pause_key not in AFK_PAUSE_HOTKEY_CHOICES or pause_key in (start_key, stop_key):
+            pause_key = "F10"
+        self.cfg.afk_start_hotkey = start_key
+        self.cfg.afk_stop_hotkey = stop_key
+        self.cfg.afk_pause_hotkey = pause_key
         self.tracker = Tracker(self.base / "tracker.json")
         self._log: collections.deque = collections.deque(maxlen=80)
         self._log_n = 0
@@ -101,6 +118,7 @@ class Backend:
         self._release_news: list[dict] = []
         self._update_lock = threading.RLock()
         self._lock = threading.Lock()
+        self._config_save_lock = threading.Lock()
         self.restart_requested = False
         self.version = updater.local_version(self.base)
 
@@ -160,7 +178,8 @@ class Backend:
         return {**STRINGS["en"], **STRINGS.get(lang, {})}
 
     def _save_cfg(self) -> None:
-        self.cfg.save(self.cfg_path)
+        with self._config_save_lock:
+            self.cfg.save(self.cfg_path)
 
     def shutdown(self) -> None:
         self.engine.stop()
@@ -222,7 +241,7 @@ class Backend:
                        "history": self._history(),
                        "input_count": e.input_count, "last_input": e.last_input,
                        "input_error": e.last_input_error,
-                       "wait_reason": e.wait_reason,
+                       "wait_reason": e.wait_reason, "pause_reason": e.pause_reason,
                        "probe_status": e.probe_status, "probe_detail": e.probe_detail,
                        "probe_at": e.probe_at, "probe_target": e.probe_target,
                        "replay_count": e.replay_count, "replay_status": e.replay_status,
@@ -253,9 +272,39 @@ class Backend:
         }
 
     # ------------------------------------------------------------ engine controls
-    def start(self) -> None:
+    def start(self) -> dict:
+        """Start the engine; optionally request Fortnite launch via Epic protocol.
+
+        Dispatching a URI is not proof that the game has started. The engine
+        waits for a verified foreground Fortnite window before sending input.
+        """
         self._control_received("start")
+        if self.engine.running:
+            was_paused = self.engine.paused
+            resumed = self.engine.start()
+            if was_paused and not resumed:
+                return {"ok": False, "reason": "return_to_game"}
+            return {"ok": True, "reason": "resumed" if was_paused else "already_running"}
+        if self.cfg.afk_launch_game and not getattr(self.io, "game_window_found", lambda: False)():
+            launcher = getattr(self.io, "launch_game", None)
+            if callable(launcher):
+                try:
+                    if not launcher():
+                        return {"ok": False, "reason": "epic_launcher_unavailable"}
+                except (OSError, ValueError) as exc:
+                    return {"ok": False, "reason": "epic_launch_error", "detail": str(exc)[:180]}
+                self.engine.start()
+                return {"ok": True, "reason": "launch_requested"}
+        # Focus the already-running game BEFORE starting the worker. This
+        # removes a race where a quick Alt+Tab occurs after window activation
+        # but before the engine has seen Fortnite once.
+        if self.cfg.auto_focus and getattr(self.io, "game_window_found", lambda: False)():
+            try:
+                self.io.focus_game()
+            except (OSError, RuntimeError):
+                pass
         self.engine.start()
+        return {"ok": True, "reason": "started"}
 
     def input_probe_delayed(self, target: str = "fortnite") -> dict:
         """Schedule a test while the user switches to the target window."""
@@ -279,9 +328,13 @@ class Backend:
         self._control_received("stop")
         self.engine.stop()
 
-    def pause(self) -> None:
+    def pause(self) -> dict:
         self._control_received("pause")
-        self.engine.toggle_pause()
+        was_paused = self.engine.paused
+        changed = self.engine.toggle_pause()
+        if not changed:
+            return {"ok": False, "reason": "return_to_game" if was_paused else "not_running"}
+        return {"ok": True, "reason": "resumed" if was_paused else "paused"}
 
     def focus_game_now(self) -> dict:
         """Switch only to a verified Fortnite window, if Windows permits it."""
@@ -315,6 +368,18 @@ class Backend:
                     if v not in STRS[k]:
                         raise ValueError(k)
                     setattr(self.cfg, k, v)
+                elif k in ("afk_start_hotkey", "afk_stop_hotkey", "afk_pause_hotkey"):
+                    key = str(v).strip().upper()
+                    allowed = (AFK_PAUSE_HOTKEY_CHOICES if k == "afk_pause_hotkey"
+                               else AFK_HOTKEY_CHOICES)
+                    others = [name for name in
+                              ("afk_start_hotkey", "afk_stop_hotkey", "afk_pause_hotkey")
+                              if name != k]
+                    if (key not in allowed or
+                            (k == "afk_start_hotkey" and key == "F12") or
+                            key in (getattr(self.cfg, name) for name in others)):
+                        raise ValueError(k)
+                    setattr(self.cfg, k, key)
                 elif k == "afk_keys":
                     keys = "".join(dict.fromkeys(c for c in str(v).lower() if c in "wasd"))
                     if not keys:

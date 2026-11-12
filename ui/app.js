@@ -11,6 +11,20 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", 
 const t = (k, kw = {}) => (S[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => kw[n] ?? "");
 const fmtT = seconds => { const s = Math.floor(Math.max(0, Number(seconds) || 0)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(n => String(n).padStart(2, "0")).join(":"); };
 const num = n => Number(n).toLocaleString();
+const HOTKEY_OPTIONS = ["F1", "F2", "F3", "F4", "F5", "F7", "F8", "F11", "F12"];
+const hotkeyPicker = (key, selected) => {
+  const choices = key === "afk_pause_hotkey"
+    ? ["F10", ...HOTKEY_OPTIONS.filter(x => x !== "F12")]
+    : HOTKEY_OPTIONS.filter(x => key !== "afk_start_hotkey" || x !== "F12");
+  return `<select class="in hotkey-picker" data-cfg="${key}">${choices.map(x => `<option value="${x}" ${selected === x ? "selected" : ""}>${x}</option>`).join("")}</select>`;
+};
+const resumeKey = () => ST?.cfg?.afk_pause_hotkey || "F10";
+const hotkeySummary = () => `${ST?.cfg?.afk_start_hotkey || "F7"} ${controlUi("запуск", "start", "запуск")} · ${ST?.cfg?.afk_stop_hotkey || "F8"} ${controlUi("стоп", "stop", "стоп")} · ${resumeKey()} ${controlUi("пауза", "pause", "пауза")}`;
+const hotkeyHelp = () => controlUi(
+  "Горячие клавиши работают и в игре, и при свёрнутом лаунчере. F10 — запасная пауза/продолжение, F12 — экстренный стоп. Все три настраиваемые кнопки должны различаться.",
+  "Hotkeys work in game and when minimized. F10 is the fallback Pause/Resume; F12 is emergency Stop. Configurable keys must differ.",
+  "Клавіші працюють у грі й згорнутому вікні. F10 — резервна пауза/продовження, F12 — аварійна зупинка. Налаштовані клавіші мають відрізнятися."
+);
 const tog = (k, on) => `<div class="tog ${on ? "on" : ""}" data-tog="${k}"></div>`;
 function toast(m) { clearTimeout(toastT); document.querySelectorAll(".toast").forEach(e => e.remove());
   const d = document.createElement("div"); d.className = "toast"; d.textContent = m; document.body.append(d); toastT = setTimeout(() => d.remove(), 2200); }
@@ -48,6 +62,17 @@ function refreshLiveMetrics() {
   updateText('[data-live="rewards"]', num(e.rewards || 0));
   updateText('[data-live="afk-total"]', t("afk.total") + ": " + (e.input_count || 0));
   updateText('[data-live="afk-last"]', t("afk.last") + ": " + (e.last_input || "—"));
+  document.querySelectorAll('[data-live="pause-hint"]').forEach(node => {
+    node.hidden = !(e.running && e.paused);
+    if (!node.hidden) node.textContent = (e.pause_reason === "focus_lost"
+      ? controlUi("Alt+Tab: действия приостановлены. Вернись в Fortnite и нажми ",
+                  "Alt+Tab: actions paused. Return to Fortnite and press ",
+                  "Alt+Tab: дії призупинено. Повернися у Fortnite та натисни ")
+      : controlUi("Анти-AFK на паузе. Вернись в Fortnite и нажми ",
+                  "Anti-AFK paused. Return to Fortnite and press ",
+                  "Анти-AFK на паузі. Повернися у Fortnite та натисни "))
+      + resumeKey() + (resumeKey() === "F10" ? "." : controlUi(" (F10 тоже работает).", " (F10 also works).", " (F10 також працює)."));
+  });
   updateText('[data-live="game-status"]', ST.diagnostics?.game_active ? t("diag.active")
     : (ST.diagnostics?.game_found ? t("afk.diag_background") : t("afk.diag_missing")));
   updateText('[data-live="foreground-title"]', ST.diagnostics?.foreground_title || t("diag.none"));
@@ -102,10 +127,16 @@ async function runControlAction(action, target = "fortnite") {
       const reason = result.reason || "unknown";
       toast(action === "focusgame" && S["afk.focus_" + reason]
         ? t("afk.focus_" + reason)
-        : controlUi("Команда отклонена: ", "Command rejected: ", "Команду відхилено: ") + reason);
+        : reason === "return_to_game"
+          ? controlUi("Вернись в Fortnite и нажми ", "Return to Fortnite and press ", "Повернися у Fortnite та натисни ") + resumeKey()
+        : reason === "epic_launcher_unavailable"
+          ? controlUi("Не найден Epic Games Launcher. Запусти Fortnite вручную или отключи автозапуск в настройках.", "Epic Games Launcher not found. Launch Fortnite manually or disable auto-launch.", "Epic Games Launcher не знайдено. Запусти Fortnite вручну або вимкни автозапуск.")
+          : controlUi("Команда отклонена: ", "Command rejected: ", "Команду відхилено: ") + reason);
     } else {
       toast(action === "focusgame" ? t("afk.focus_ok")
-        : controlUi("Python получил команду: ", "Python acknowledged: ", "Python отримав команду: ") + name);
+        : result?.reason === "launch_requested"
+          ? controlUi("Fortnite запускается через Epic. Ожидание окна игры…", "Fortnite launch requested via Epic. Waiting for game window…", "Fortnite запускається через Epic. Очікування вікна гри…")
+          : controlUi("Python получил команду: ", "Python acknowledged: ", "Python отримав команду: ") + name);
     }
   } catch (err) {
     toast(controlUi("Нет ответа от Python: ", "Python did not respond: ", "Немає відповіді Python: ")
@@ -196,7 +227,7 @@ const PAGE = {
         <button class="btn control-stop" data-act="stop" ${!e.running ? "disabled" : ""}>■ &nbsp;${t("btn.stop")}</button>
         <button class="btn control-pause" data-act="pause" ${!e.running ? "disabled" : ""}>${e.paused ? "▶" : "Ⅱ"} &nbsp;${e.paused ? t("btn.resume") : t("btn.pause")}</button>
       </div>
-      <div class="control-footer"><button class="btn sm" data-act="reset">${t("btn.reset")}</button><small>${t("hotkeys")}</small></div></div>
+      <div class="control-footer"><button class="btn sm" data-act="reset">${t("btn.reset")}</button><small>${hotkeySummary()}</small></div></div>
     <div class="card stats-card"><h3>${t("home.session_stats")}</h3><div class="grid g4"><div class="stat"><b data-live="games">${e.games}</b><span>${t("stat.games")}</span></div>
       <div class="stat"><b data-live="cycles">${e.cycles}</b><span>${t("stat.cycles")}</span></div><div class="stat"><b><span data-live="runtime">${fmtT(e.runtime)}</span></b><span>${t("stat.time")}</span></div>
       <div class="stat"><b>${(e.score * 100 | 0)}%</b><span>${t("stat.match")}</span></div></div>
@@ -232,6 +263,7 @@ const PAGE = {
       <span class="badge" data-live="afk-total">${t("afk.total")}: ${e.input_count}</span>
       <span class="badge" data-live="afk-last">${t("afk.last")}: ${esc(e.last_input || "—")}</span>
     </div>
+    <p class="afk-pause-banner" data-live="pause-hint" ${!e.paused ? "hidden" : ""}></p>
     ${e.input_error ? `<div class="warnbox">${esc(e.input_error)}</div>` : ""}
     <div class="card afk-diag" style="margin-bottom:16px">
       <h3>${t("diag.heading")}</h3>
@@ -244,6 +276,7 @@ const PAGE = {
         <button class="btn sm" data-act="focusgame" ${!ST.diagnostics?.game_found ? "disabled" : ""}>${t("afk.focus_button")}</button>
         <button class="btn sm pri" data-act="ptest" data-target="fortnite" ${e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_button")}</button>
         <button class="btn sm" data-act="ptest" data-target="notepad" ${e.probe_status === "scheduled" ? "disabled" : ""}>${t("afk.probe_notepad")}</button>
+        <button class="btn sm" data-act="afk_report">${controlUi("Отчёт для тестирования", "Beta diagnostic report", "Звіт для тестування")}</button>
         <span class="mute">${t("afk.probe_help")}</span>
       </div>
       ${e.probe_status !== "idle" ? `<p class="mute">${t("afk.probe_status")}: ${esc(e.probe_target === "notepad" ? t("afk.probe_notepad_name") : "Fortnite")} — ${esc(t("afk.probe_" + e.probe_status))}
@@ -258,6 +291,13 @@ const PAGE = {
       ${f(t("afk.maxpause"), sl("afk_pause_max", .2, 5, .1))}
       ${f(t("afk.hold"), sl("afk_hold", .3, 4, .1))}
       ${f(t("afk.keys"), `<input class="in" type="text" data-cfg="afk_keys" maxlength="4" value="${esc(c.afk_keys)}">`)}
+      <h3 style="margin-top:14px">${controlUi("Запуск и остановка", "Start and stop", "Запуск і зупинка")}</h3>
+      ${f(controlUi("Открывать Fortnite при запуске", "Launch Fortnite on Start", "Відкривати Fortnite під час запуску"), tog("afk_launch_game", c.afk_launch_game))}
+      ${f(controlUi("Автопауза при Alt+Tab", "Auto-pause on Alt+Tab", "Автопауза при Alt+Tab"), tog("afk_pause_on_alt_tab", c.afk_pause_on_alt_tab))}
+      ${f(controlUi("Клавиша запуска", "Start hotkey", "Клавіша запуску"), hotkeyPicker("afk_start_hotkey", c.afk_start_hotkey))}
+      ${f(controlUi("Клавиша остановки", "Stop hotkey", "Клавіша зупинки"), hotkeyPicker("afk_stop_hotkey", c.afk_stop_hotkey))}
+      ${f(controlUi("Клавиша паузы/продолжения", "Pause/Resume hotkey", "Клавіша паузи/продовження"), hotkeyPicker("afk_pause_hotkey", c.afk_pause_hotkey))}
+      <p class="mute hotkey-help">${hotkeyHelp()}</p>
       <h3 style="margin-top:14px">${t("afk.motion")}</h3>
       ${f(t("afk.jump"), tog("afk_jump_enabled", c.afk_jump_enabled))}
       ${f(t("afk.sprint"), tog("afk_sprint_enabled", c.afk_sprint_enabled))}
@@ -327,7 +367,13 @@ const PAGE = {
       ${f(t("set.theme"), `<div class="seg">${["light", "dark"].map(l => `<button class="${c.theme === l ? "on" : ""}" data-theme="${l}">${t("theme." + l)}</button>`).join("")}</div>`)}
       ${f(t("set.game_language"), `<select data-cfg="language">${["ru", "en", "uk"].map(l => `<option value="${l}" ${c.language === l ? "selected" : ""}>${esc(t("lang." + l))}</option>`).join("")}</select>`)}
       <h3 style="margin-top:18px">${t("set.season")}</h3>${f(t("set.week_start"), `<input type="datetime-local" id="wk" value="${ST.tracker.week_start}">`)}<div class="mute">${t("set.week_hint")}</div>
-      <h3 style="margin-top:18px">${t("set.hotkeys")}</h3><div class="mute">${t("set.hotkeys_text")}</div></div>
+      <h3 style="margin-top:18px">${t("set.hotkeys")}</h3>
+      ${f(controlUi("Запустить анти-AFK", "Start anti-AFK", "Запустити анти-AFK"), hotkeyPicker("afk_start_hotkey", c.afk_start_hotkey))}
+      ${f(controlUi("Остановить анти-AFK", "Stop anti-AFK", "Зупинити анти-AFK"), hotkeyPicker("afk_stop_hotkey", c.afk_stop_hotkey))}
+      ${f(controlUi("Пауза/продолжить", "Pause/Resume", "Пауза/продовжити"), hotkeyPicker("afk_pause_hotkey", c.afk_pause_hotkey))}
+      ${f(controlUi("Открывать Fortnite автоматически", "Launch Fortnite automatically", "Автоматично запускати Fortnite"), tog("afk_launch_game", c.afk_launch_game))}
+      ${f(controlUi("Ставить анти-AFK на паузу при Alt+Tab", "Pause anti-AFK on Alt+Tab", "Призупиняти анти-AFK при Alt+Tab"), tog("afk_pause_on_alt_tab", c.afk_pause_on_alt_tab))}
+      <p class="mute hotkey-help">${hotkeyHelp()}</p></div>
     <div class="card"><h3>${t("set.recognition")}</h3>
       ${f(t("set.threshold"), sl("threshold", .3, .99, .01, c.threshold))}${f(t("set.scan"), sl("scan_interval", .1, 3, .1, c.scan_interval))}${f(t("set.delay"), sl("click_delay", 0, 10, .5, c.click_delay))}
       ${f(t("set.foreground"), tog("require_foreground", c.require_foreground))}${f(t("set.focus"), tog("auto_focus", c.auto_focus))}${f(t("set.treasure_auto_boost"), tog("treasure_auto_boost", c.treasure_auto_boost))}
@@ -491,7 +537,12 @@ function bindShot() {
 }
 
 // ---------------------------------------------------------------- events
-async function patch(p) { await api.set_config(p); await tick(); }
+async function patch(p) {
+  const result = await api.set_config(p);
+  await tick();
+  if (!result?.ok) render(true); // undo rejected selections, do not imply saved
+  return result;
+}
 document.addEventListener("click", async ev => {
   const windowButton = ev.target.closest("[data-window]");
   if (windowButton) {
@@ -550,9 +601,13 @@ document.addEventListener("click", async ev => {
     await tick();
     return render(true);
   }
-  if (a === "support_report") {
+  if (a === "support_report" || a === "afk_report") {
     supportReport = await api.create_support_report();
-    if (!supportReport.ok) toast(t("support.failed") + ": " + String(supportReport.error || ""));
+    if (!supportReport.ok) {
+      toast(t("support.failed") + ": " + String(supportReport.error || ""));
+      return;
+    }
+    if (a === "afk_report") page = "support";
     return render(true);
   }
   if (a === "support_open") {
@@ -610,7 +665,14 @@ document.addEventListener("change", async ev => { const e = ev.target;
   if (e.id === "pay-method") { payMethod = e.value; paymentDraft = null; return render(true); }
   if (e.id === "pay-game") { payGame = e.value; paymentDraft = null; return render(true); }
   if (e.id === "role") tplRole = e.value;
-  if (e.dataset.cfg) { await patch({[e.dataset.cfg]: e.value}); toast(t("toast.saved")); }
+  if (e.dataset.cfg) {
+    const result = await patch({[e.dataset.cfg]: e.value});
+    toast(result?.ok ? t("toast.saved") : controlUi(
+      "Настройка отклонена: выбери разные свободные клавиши.",
+      "Setting rejected: choose different available hotkeys.",
+      "Налаштування відхилено: вибери різні вільні клавіші."
+    ));
+  }
   else if (e.id === "wk") { await api.tracker_set({week_start: e.value}); tick(); }
   else if (e.id === "boost" || e.id === "odds") { /* Save explicitly with the button. */ } });
 // The pywebviewready event is dispatched on WINDOW, not document.
