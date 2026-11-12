@@ -9,7 +9,7 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=Fortnite Pirate Token (unofficial)
 DefaultDirName={localappdata}\Programs\EasyRewards
-DefaultGroupName=Easy Rewards
+DefaultGroupName=Fortnite Pirate Token
 PrivilegesRequired=lowest
 OutputDir=release
 OutputBaseFilename=EasyRewards_Setup_{#AppVersion}
@@ -31,10 +31,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Source: "dist\EasyRewards\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Easy Rewards"; Filename: "{app}\EasyRewards.exe"; IconFilename: "{app}\EasyRewards.exe"
-Name: "{autodesktop}\Easy Rewards"; Filename: "{app}\EasyRewards.exe"; IconFilename: "{app}\EasyRewards.exe"; Tasks: desktopicon
+Name: "{autoprograms}\Fortnite Pirate Token"; Filename: "{app}\EasyRewards.exe"; IconFilename: "{app}\EasyRewards.exe"
+Name: "{autodesktop}\Fortnite Pirate Token"; Filename: "{app}\EasyRewards.exe"; IconFilename: "{app}\EasyRewards.exe"; Tasks: desktopicon
 
 [InstallDelete]
+Type: files; Name: "{autodesktop}\Easy Rewards.lnk"
+Type: files; Name: "{autoprograms}\Easy Rewards.lnk"
 Type: files; Name: "{autodesktop}\Easy Rewards Gold Edition.lnk"
 Type: files; Name: "{autoprograms}\Easy Rewards Gold Edition.lnk"
 
@@ -42,4 +44,4 @@ Type: files; Name: "{autoprograms}\Easy Rewards Gold Edition.lnk"
 Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; Flags: checkedonce
 
 [Run]
-Filename: "{app}\EasyRewards.exe"; Description: "Запустить Easy Rewards"; Flags: nowait
+Filename: "{app}\EasyRewards.exe"; Description: "Запустить Fortnite Pirate Token"; Flags: nowait
