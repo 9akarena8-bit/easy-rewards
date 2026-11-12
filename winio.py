@@ -98,8 +98,28 @@ def _mouse(flags: int) -> None:
     _send(INPUT(INPUT_MOUSE, _INPUTUNION(mi=MOUSEINPUT(0, 0, 0, flags, 0, 0))))
 
 
+EPIC_FORTNITE_URI = (
+    "com.epicgames.launcher://apps/"
+    "fn%3A4fe75bbc5a674f4f9b356b5c90567da5%3AFortnite"
+    "?action=launch&silent=true"
+)
+
+
 class WinIO:
     window_title = "Fortnite"
+
+    def launch_game(self) -> bool:
+        """Request Fortnite through the installed official Epic Games Launcher."""
+        import os
+        import winreg
+        try:
+            # Epic's deep-link documentation recommends checking the handler.
+            with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "com.epicgames.launcher"):
+                pass
+            os.startfile(EPIC_FORTNITE_URI)
+            return True  # Protocol request sent, NOT proof game is running.
+        except (OSError, ValueError):
+            return False
 
     def grab(self) -> np.ndarray:
         image = ImageGrab.grab()  # foreground primary display in borderless windowed mode
