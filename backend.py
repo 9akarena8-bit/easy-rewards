@@ -113,6 +113,7 @@ class Backend:
         self._engine_start_guard = threading.Lock()
         self._start_serial = 0
         self._start_pending = False
+        self._start_workers = 0  # includes cancelled initializers still draining
         self._start_phase = "idle"
         self._start_error = ""
         # Window enumeration can block under Windows. Never run it synchronously
@@ -438,10 +439,13 @@ class Backend:
                 return {"ok": False, "reason": "return_to_game"}
             return {"ok": True, "reason": "resumed" if was_paused else "already_running"}
         with self._start_guard:
-            if self._start_pending:
+            # A cancelled initializer may still be draining, but a new Start
+            # must be queued while the _engine_start_guard serializes workers.
+            if self._start_pending and self._start_phase != "cancelled":
                 return {"ok": True, "reason": "start_queued"}
             self._start_serial += 1
             generation = self._start_serial
+            self._start_workers += 1
             self._start_pending = True
             self._start_phase = "queued"
             self._start_error = ""
@@ -490,8 +494,11 @@ class Backend:
             self.log("log.error", err="start: " + type(exc).__name__)
         finally:
             with self._start_guard:
-                # A late old worker must not clear the newer Start's status.
-                if generation == self._start_serial:
+                self._start_workers = max(0, self._start_workers - 1)
+                # Never report cancellation completed while its worker still
+                # executes, and never clear a newer generation's pending flag.
+                if generation == self._start_serial or (
+                        self._start_workers == 0 and self._start_phase == "cancelled"):
                     self._start_pending = False
 
     def _activate_game_after_start(self, generation: int) -> None:
@@ -540,9 +547,9 @@ class Backend:
         self._control_received("stop")
         with self._start_guard:
             self._start_serial += 1
-            # Clear the cancelled request so Start can schedule a NEW
-            # generation even if old template loading has not returned.
-            self._start_pending = False
+            # Keep pending until the cancelled worker actually exits.
+            # A subsequent Start is allowed when phase == cancelled.
+            self._start_pending = self._start_workers > 0
             self._start_phase = "cancelled"
         self.engine.stop()
 
