@@ -222,7 +222,7 @@ class Backend:
                          "time": self._control_time,
                          "sequence": self._control_sequence},
             "cfg": {k: getattr(self.cfg, k) for k in Config.__dataclass_fields__},
-            "engine": {"state": ("stopping" if e.stopping else "paused" if e.paused and e.running else e.state), "running": e.running, "paused": e.paused, "score": round(e.score, 3),
+            "engine": {"state": ("stopping" if e.stopping else "paused" if e.paused and e.running else e.state), "running": e.running, "paused": e.paused, "focus_suspended": e.focus_suspended, "score": round(e.score, 3),
                        "games": e.games, "cycles": e.cycles, "rewards": e.rewards, "runtime": int(e.runtime),
                        "history": self._history(),
                        "input_count": e.input_count, "last_input": e.last_input,
