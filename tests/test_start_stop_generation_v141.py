@@ -110,3 +110,26 @@ def test_stop_before_pending_worker_begins_cannot_resurrect_engine(tmp_path, mon
     finally:
         release.set()
         backend.stop()
+
+def test_finished_worker_cannot_leave_stale_stopping_state(tmp_path):
+    """The final is_alive() observation must win the state race."""
+    from core import Config, Engine
+
+    class AlreadyFinishing:
+        def __init__(self):
+            self.checks = 0
+
+        def is_alive(self):
+            self.checks += 1
+            # Alive when Stop first checks, finished before join returns.
+            return self.checks == 1
+
+        def join(self, timeout=None):
+            assert timeout <= .35
+
+    eng = Engine(Config(), FakeGameIO(), tmp_path)
+    eng._thread = AlreadyFinishing()
+    eng.state = "running"
+    eng.stop()
+    assert eng.state == "stopped"
+    assert not eng.running
