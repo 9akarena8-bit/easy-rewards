@@ -118,6 +118,7 @@ class Backend:
         self._release_news: list[dict] = []
         self._update_lock = threading.RLock()
         self._lock = threading.Lock()
+        self._config_save_lock = threading.Lock()
         self.restart_requested = False
         self.version = updater.local_version(self.base)
 
@@ -177,7 +178,8 @@ class Backend:
         return {**STRINGS["en"], **STRINGS.get(lang, {})}
 
     def _save_cfg(self) -> None:
-        self.cfg.save(self.cfg_path)
+        with self._config_save_lock:
+            self.cfg.save(self.cfg_path)
 
     def shutdown(self) -> None:
         self.engine.stop()
