@@ -34,10 +34,11 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-ui.txt
+            merchant_service/requirements-offline.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r requirements-ui.txt pytest
+          python -m pip install -r requirements.txt -r requirements-ui.txt -r merchant_service/requirements-offline.txt pytest
       - name: Check Python syntax
         run: |
           python -m compileall -q app.py app_classic.py backend.py core.py i18n.py updater.py release_updater.py replay_detect.py webapp.py winio.py tests

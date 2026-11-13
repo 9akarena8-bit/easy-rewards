@@ -11,6 +11,7 @@ import re
 import secrets
 import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
@@ -46,10 +47,15 @@ class DemoOrderLedger:
                 customer_ref TEXT NOT NULL DEFAULT '', review_note TEXT NOT NULL DEFAULT ''
             )""")
 
+    @contextmanager
     def _connect(self):
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
-        return db
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def create(self, *, plan: str, method: str, game: str = "", basket=None,
                customer_ref: str = "") -> dict:

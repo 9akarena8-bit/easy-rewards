@@ -67,3 +67,21 @@ def test_rapid_backend_settings_updates_preserve_valid_json(tmp_path):
     assert isinstance(settings, dict)
     assert .5 <= settings["afk_hold"] <= 1.3
     assert not list(tmp_path.glob(".cfg-*.tmp"))
+
+
+def test_theme_and_language_are_saved_and_failed_write_does_not_change_state(tmp_path, monkeypatch):
+    backend = Backend(tmp_path, IO())
+    assert backend.set_config({"theme": "light", "ui_language": "uk"})["ok"]
+    assert Backend(tmp_path, IO()).cfg.theme == "light"
+    assert Backend(tmp_path, IO()).cfg.ui_language == "uk"
+
+    def fail_save(self, path):
+        raise PermissionError(path)
+
+    monkeypatch.setattr(Config, "save", fail_save)
+    assert backend.set_config({"theme": "dark", "ui_language": "en"}) == {
+        "ok": False, "rejected": [], "error": "save_failed",
+    }
+    assert backend.state()["cfg"]["theme"] == "light"
+    assert backend.state()["cfg"]["ui_language"] == "uk"
+    assert backend.set_config({"afk_launch_game": "false"})["rejected"] == ["afk_launch_game"]

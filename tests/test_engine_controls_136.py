@@ -80,6 +80,7 @@ def test_pause_and_stop_work_during_blocked_capture(tmp_path):
         engine.stop()
         assert wait_until(lambda: not engine.running, 1.5)
         assert engine.state == "stopped"
+        assert not engine.paused and not engine.pause_reason
     finally:
         io.release.set()
 
@@ -114,6 +115,11 @@ def test_focus_game_reports_real_windows_result(tmp_path):
     io.focus_game = lambda: False
     assert backend.focus_game_now() == {"ok": False, "reason": "denied"}
 
+
+def test_backend_wires_license_access_to_input_probe(tmp_path):
+    backend = Backend(tmp_path, BlockingIO())
+    assert backend.engine._probe_allowed == backend._access_allowed
+
 def test_backend_state_never_reports_stopping_when_worker_is_gone(tmp_path):
     io = BlockingIO()
     backend = Backend(tmp_path, io)
@@ -122,3 +128,56 @@ def test_backend_state_never_reports_stopping_when_worker_is_gone(tmp_path):
     state = backend.state()["engine"]
     assert state["running"] is False
     assert state["state"] == "stopped"
+
+
+def test_stop_cancels_engine_initialization_before_any_worker_starts(tmp_path, monkeypatch):
+    io = BlockingIO()
+    engine = Engine(Config(), io, tmp_path, log=lambda *args, **kwargs: None)
+    entered, release = threading.Event(), threading.Event()
+
+    def reload_templates():
+        entered.set()
+        release.wait(3)
+        return 0
+
+    monkeypatch.setattr(engine, "reload_templates", reload_templates)
+    result = []
+    startup = threading.Thread(target=lambda: result.append(engine.start()))
+    startup.start()
+    try:
+        assert entered.wait(1)
+        engine.stop()
+        assert engine.state == "stopped"
+    finally:
+        release.set()
+        startup.join(2)
+        assert result == [False]
+        assert not engine.running
+        engine.stop()
+
+
+def test_final_stop_cancels_repeated_starts_while_old_worker_drains(tmp_path, monkeypatch):
+    engine = Engine(Config(), BlockingIO(), tmp_path, log=lambda *args, **kwargs: None)
+    entered, release = threading.Event(), threading.Event()
+    ticks = []
+
+    def blocked_tick():
+        ticks.append(True)
+        entered.set()
+        release.wait(3)
+
+    monkeypatch.setattr(engine, "_tick", blocked_tick)
+    try:
+        assert engine.start()
+        assert entered.wait(1)
+        engine.stop()
+        assert engine.stopping
+        assert engine.start()
+        assert engine.start()
+        engine.stop()
+        release.set()
+        assert wait_until(lambda: not engine.running)
+        assert len(ticks) == 1
+    finally:
+        release.set()
+        engine.stop()

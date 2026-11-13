@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install requirements
-        run: python -m pip install -r requirements.txt -r requirements-ui.txt pytest
+        run: python -m pip install -r requirements.txt -r requirements-ui.txt -r merchant_service/requirements-offline.txt pytest
       - name: Python syntax and tests
         run: |
           python -m compileall -q core.py backend.py webapp.py winio.py tests

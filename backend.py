@@ -7,9 +7,12 @@ the screen/keyboard layer (`io`) is injected.
 from __future__ import annotations
 
 import base64
+import json
+import secrets
 import os
 import sys
 import collections
+from dataclasses import replace
 import threading
 import time
 from pathlib import Path
@@ -22,6 +25,7 @@ import treasure
 import release_updater
 import subscription_preview
 import payment_hub
+from merchant_client import MerchantClient
 from merchant_service.license_client import LicenseClient
 import support_report
 import discord_notifications
@@ -72,10 +76,11 @@ class Backend:
         "templates", "delete_template", "capture_screenshot", "save_template", "test_templates",
         "counter_add", "counter_set", "counter_edit", "counter_new", "counter_delete", "tokens_add",
         "prize_add", "prize_toggle", "prize_delete", "tracker_set", "tracker_export", "tracker_import",
-        "tracker_reset", "update_check", "update_prepare", "update_install", "open_mini", "close_mini",
+        "tracker_reset", "update_check", "update_check_async", "update_prepare", "update_install", "open_mini", "close_mini",
         "input_probe_delayed", "create_support_report", "open_support",
         "discord_configure", "discord_test", "discord_clear",
         "payment_interest_create", "license_activate", "license_check",
+        "offline_activate", "merchant_login", "merchant_refresh", "merchant_create_order", "merchant_submit", "merchant_referral", "merchant_logout",
     )
 
     def __init__(self, base, io, hooks: Hooks | None = None):
@@ -84,6 +89,7 @@ class Backend:
         self.hooks = hooks or Hooks()
         self.cfg_path = self.base / "config.json"
         self.templates_root = self.base / "templates"
+        self._config_lock = threading.RLock()
         self.cfg = Config.load(self.cfg_path)
         # Never let a malformed/old config disable emergency Stop or bind
         # reserved F12 as Start. Settings can also be edited outside the UI.
@@ -116,6 +122,7 @@ class Backend:
         self._start_workers = 0  # includes cancelled initializers still draining
         self._start_phase = "idle"
         self._start_error = ""
+        self._launch_status = "idle"
         # Window enumeration can block under Windows. Never run it synchronously
         # from pywebview's 800 ms state polling path.
         self._game_lookup_lock = threading.Lock()
@@ -124,7 +131,21 @@ class Backend:
         self._game_lookup_last_at = 0.0
         self._game_lookup_value = False
         self._game_lookup_error = ""
+        launcher_available = getattr(self.io, "epic_launcher_available", None)
+        self._epic_launcher_available = launcher_available() if callable(launcher_available) else None
         self.reward_stats = RewardStats(self.base / "rewards.json")
+        self._access_watch_stop = threading.Event()
+        self._access_watch_thread = None
+        self._offline_path = self.base / "access-license.json"
+        self._installation_path = self.base / "installation-id.txt"
+        if self._installation_path.exists():
+            self._installation_id = self._installation_path.read_text(encoding="utf-8").strip()
+        else:
+            self._installation_id = secrets.token_hex(16)
+            self.base.mkdir(parents=True, exist_ok=True)
+            self._installation_path.write_text(self._installation_id, encoding="utf-8")
+        self.merchant = MerchantClient(os.environ.get("FPT_MERCHANT_SERVER_URL", ""),
+                                       os.environ.get("FPT_LOCAL_DEMO", "") == "1")
         self.payment_drafts = payment_hub.LocalInterestDrafts(self.base / "payment_interest_drafts.json")
         # Opt-in integration preview only; unset in production until the
         # actual licensing policy and payment processors have been approved.
@@ -142,7 +163,8 @@ class Backend:
                 self._license_status = {"configured": False, "ok": False,
                                         "error": "invalid_https_server"}
         self.engine = Engine(self.cfg, io, self.templates_root, log=self.log,
-                             on_reward=self.reward_stats.increment)
+                             on_reward=self.reward_stats.increment,
+                             probe_allowed=self._access_allowed)
         self._shot: np.ndarray | None = None
         self._manifest: dict | None = None
         self._release_manifest: dict | None = None
@@ -187,6 +209,17 @@ class Backend:
                           "Сохранены новости, дизайн, Telegram и демо-оплата. "
                           "Требуется ручная проверка в Fortnite; реальные платежи отключены.")
             }]
+        if self.version == "1.4.3":
+            self._bundled_news = [{
+                "version": "1.4.3-beta",
+                "title": "Fortnite Pirate Token v1.4.3 Beta — патч интерфейса и надёжности",
+                "notes": ("Обновлены меню, подписка и экран поддержки; полный текст патчей "
+                          "получил форматирование заголовков, ссылок и списков. Исправлена "
+                          "отмена Start/Stop при долгом поиске окна и освобождение ввода "
+                          "после ошибок Windows. Покупка — только заявка на ручную проверку; "
+                          "друзьям владелец выдаёт бесплатный файл доступа. Требуются "
+                          "ручная проверка в установленном приложении и Fortnite.")
+            }]
         self._release_news = list(self._bundled_news)
 
     # ------------------------------------------------------------ plumbing
@@ -216,6 +249,60 @@ class Backend:
                                 skin_selection: dict | None = None) -> dict:
         """Save a local, non-payable request. NEVER accept payment or grant access."""
         return self.payment_drafts.create(plan, method, game, skin_selection)
+
+    def _offline_status(self) -> dict:
+        bundled = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+        public = bundled / "assets" / "license-public.pem"
+        status = {"installation_id": self._installation_id, "active": False,
+                  "configured": public.is_file(), "expires_at": None,
+                  "owner_test": not self.release_mode}
+        try:
+            from merchant_service.offline_license import verify_license
+            document = json.loads(self._offline_path.read_text(encoding="utf-8"))
+            payload = verify_license(document, public.read_bytes(), self._installation_id)
+            status.update(active=True, expires_at=payload["expires_at"], access=payload["access"])
+        except (ImportError, OSError, ValueError, KeyError, TypeError):
+            pass
+        return status
+
+    def offline_activate(self, document: str) -> dict:
+        if not isinstance(document, str) or len(document) > 16384:
+            return {"ok": False, "error": "invalid_license"}
+        try:
+            if len(document.encode("utf-8")) > 16384:
+                return {"ok": False, "error": "invalid_license"}
+            from merchant_service.offline_license import parse_license_input, verify_license
+            bundled = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+            public = bundled / "assets" / "license-public.pem"
+            if not public.is_file():
+                return {"ok": False, "error": "public_key_missing"}
+            parsed = parse_license_input(document)
+            verify_license(parsed, public.read_bytes(), self._installation_id)
+            tmp = self._offline_path.with_suffix(".tmp")
+            with self._license_lock:
+                tmp.write_text(json.dumps(parsed), encoding="utf-8")
+                tmp.replace(self._offline_path)
+            return {"ok": True, **self._offline_status()}
+        except (ImportError, OSError, ValueError, KeyError, TypeError):
+            return {"ok": False, "error": "invalid_or_expired_license"}
+
+    def merchant_login(self, credential: str) -> dict:
+        return self.merchant.login(credential)
+
+    def merchant_refresh(self) -> dict:
+        return self.merchant.refresh()
+
+    def merchant_create_order(self, plan: str, method: str, request_id: str) -> dict:
+        return self.merchant.create_order(plan, method, request_id)
+
+    def merchant_submit(self, order_id: str) -> dict:
+        return self.merchant.submit(order_id)
+
+    def merchant_referral(self, code: str) -> dict:
+        return self.merchant.apply_referral(code)
+
+    def merchant_logout(self) -> dict:
+        return self.merchant.logout()
 
     def license_activate(self, key: str) -> dict:
         """Explicit, opt-in activation. The launcher never processes a payment."""
@@ -289,7 +376,8 @@ class Backend:
             self.cfg.save(self.cfg_path)
 
     def shutdown(self) -> None:
-        self.engine.stop()
+        self._access_watch_stop.set()
+        self.stop()
         self._save_cfg()
 
     # ------------------------------------------------------------ state
@@ -329,8 +417,8 @@ class Backend:
         self._tr_active = trs["active"]
         return trs
 
-    def _game_window_found_cached(self) -> bool:
-        """Return latest observation instantly; refresh OS window search in background."""
+    def _game_window_lookup_snapshot(self) -> dict:
+        """Capture one lookup observation and schedule an asynchronous refresh."""
         now = time.monotonic()
         start_lookup = False
         with self._game_lookup_lock:
@@ -340,11 +428,16 @@ class Backend:
                 self._game_lookup_pending = True
                 self._game_lookup_last_at = now
                 start_lookup = True
-            last_found = self._game_lookup_value
+            snapshot = {
+                "game_found": self._game_lookup_value,
+                "game_lookup_pending": self._game_lookup_pending,
+                "game_lookup_known": self._game_lookup_known,
+                "game_lookup_error": self._game_lookup_error,
+            }
         if start_lookup:
             threading.Thread(target=self._refresh_game_window_found,
                              name="game-lookup", daemon=True).start()
-        return last_found
+        return snapshot
 
     def _refresh_game_window_found(self) -> None:
         """At most one potentially slow Win32 search runs concurrently."""
@@ -375,7 +468,8 @@ class Backend:
                          "sequence": self._control_sequence,
                          "start_pending": self._start_pending,
                          "start_phase": self._start_phase,
-                         "start_error": self._start_error},
+                         "start_error": self._start_error,
+                         "launch_status": self._launch_status},
             "cfg": {k: getattr(self.cfg, k) for k in Config.__dataclass_fields__},
             "engine": {"state": ("stopped" if not e.running and e.state == "stopping"
                                  else "stopping" if e.stopping
@@ -400,10 +494,8 @@ class Backend:
             "diagnostics": {
                 "foreground_title": (self.io.foreground_title() if hasattr(self.io, "foreground_title") else ""),
                 "game_active": bool(self.io.game_in_foreground()),
-                "game_found": self._game_window_found_cached(),
-                "game_lookup_pending": self._game_lookup_pending,
-                "game_lookup_known": self._game_lookup_known,
-                "game_lookup_error": self._game_lookup_error,
+                **self._game_window_lookup_snapshot(),
+                "epic_launcher_available": self._epic_launcher_available,
                 "foreground_process": (self.io.foreground_process() if hasattr(self.io, "foreground_process") else ""),
                 "game_title": str(getattr(self.io, "window_title", "Fortnite")),
                 "template_count": len(e.templates),
@@ -419,20 +511,46 @@ class Backend:
             "release_news": list(self._release_news),
             "subscription": subscription_preview.snapshot(),
             "license_status": dict(self._license_status),
+            "merchant": self.merchant.snapshot(),
+            "offline_access": self._offline_status(),
             "payment_hub": {**payment_hub.catalog(),
                             "drafts": self.payment_drafts.recent()},
             "treasure": trs,
         }
 
     # ------------------------------------------------------------ engine controls
+    def _access_allowed(self) -> bool:
+        return not self.release_mode or self._offline_status()["active"]
+
+    def _ensure_access_watch(self) -> None:
+        if not self.release_mode:
+            return
+        with self._start_guard:
+            if self._access_watch_thread is None:
+                self._access_watch_thread = threading.Thread(
+                    target=self._watch_access, name="offline-license-expiry", daemon=True)
+                self._access_watch_thread.start()
+
+    def _watch_access(self) -> None:
+        while not self._access_watch_stop.wait(0.5):
+            if (self.engine.running or self._start_pending) and not self._access_allowed():
+                if not self.engine.stopping or self._start_phase != "cancelled":
+                    self.stop()
+
     def start(self) -> dict:
         """Return promptly: the v1.4.0 report shows a command before any engine log.
 
         Windows game discovery/focus and template initialization must never hold
         the pywebview start call, otherwise the UI times out after five seconds.
         """
+        if not self._access_allowed():
+            return {"ok": False, "reason": "subscription_required"}
+        self._ensure_access_watch()
         self._control_received("start")
         if self.engine.running:
+            if getattr(self.engine, "stopping", False):
+                self.engine.start()
+                return {"ok": True, "reason": "start_queued"}
             was_paused = self.engine.paused
             resumed = self.engine.start()
             if was_paused and not resumed:
@@ -449,6 +567,7 @@ class Backend:
             self._start_pending = True
             self._start_phase = "queued"
             self._start_error = ""
+            self._launch_status = "checking"
         threading.Thread(target=self._start_in_background, args=(generation,),
                          name="engine-launch", daemon=True).start()
         return {"ok": True, "reason": "start_queued"}
@@ -464,6 +583,13 @@ class Backend:
                     if generation != self._start_serial:
                         return
                     self._start_phase = "initializing_engine"
+                if not self._access_allowed():
+                    with self._start_guard:
+                        if generation == self._start_serial:
+                            self._start_phase = "not_started"
+                            self._start_error = "subscription_required"
+                            self._launch_status = "idle"
+                    return
                 self.engine.start()
                 with self._start_guard:
                     cancelled = generation != self._start_serial
@@ -475,6 +601,7 @@ class Backend:
                         if generation == self._start_serial:
                             self._start_phase = "not_started"
                             self._start_error = "engine_disabled_or_not_started"
+                            self._launch_status = "idle"
                     return
                 with self._start_guard:
                     cancelled = generation != self._start_serial
@@ -491,6 +618,7 @@ class Backend:
                 if generation == self._start_serial:
                     self._start_phase = "start_failed"
                     self._start_error = type(exc).__name__ + ": " + str(exc)[:180]
+                    self._launch_status = "idle"
             self.log("log.error", err="start: " + type(exc).__name__)
         finally:
             with self._start_guard:
@@ -503,20 +631,24 @@ class Backend:
 
     def _activate_game_after_start(self, generation: int) -> None:
         """Optional OS focus/launcher request cannot block Python API or start."""
+        launch_status = "idle"
         try:
-            found = bool(getattr(self.io, "game_window_found", lambda: False)())
+            active = self.io.game_in_foreground()
+            found = active or bool(getattr(self.io, "game_window_found", lambda: False)())
             with self._start_guard:
-                if generation != self._start_serial or not self.engine.running:
+                if generation != self._start_serial or not self.engine.running or getattr(self.engine, "paused", False):
                     return
-            if found and self.cfg.auto_focus:
-                self.io.focus_game()
-            elif not found and self.cfg.afk_launch_game:
+            if found:
+                launch_status = "already_open"
+                # The engine owns focus retries. A late lookup must never
+                # bring the game back after the user has Alt+Tabbed.
+            elif not self.cfg.afk_launch_game:
+                launch_status = "disabled"
+            else:
                 launch = getattr(self.io, "launch_game", None)
-                if callable(launch) and not launch():
-                    with self._start_guard:
-                        if generation == self._start_serial:
-                            self._start_error = "epic_launcher_unavailable"
+                launch_status = "requested" if callable(launch) and launch() else "unavailable"
         except Exception as exc:
+            launch_status = "error"
             with self._start_guard:
                 if generation == self._start_serial:
                     self._start_error = "window_activation: " + type(exc).__name__
@@ -524,6 +656,9 @@ class Backend:
             with self._start_guard:
                 if generation == self._start_serial and self.engine.running:
                     self._start_phase = "engine_running"
+                    self._launch_status = launch_status
+                    if launch_status == "unavailable":
+                        self._start_error = "epic_launcher_unavailable"
 
     def input_probe_delayed(self, target: str = "fortnite") -> dict:
         """Schedule a test while the user switches to the target window."""
@@ -551,11 +686,15 @@ class Backend:
             # A subsequent Start is allowed when phase == cancelled.
             self._start_pending = self._start_workers > 0
             self._start_phase = "cancelled"
+            self._launch_status = "idle"
         self.engine.stop()
 
     def pause(self) -> dict:
         self._control_received("pause")
         was_paused = self.engine.paused
+        if was_paused and not self._access_allowed():
+            self.stop()
+            return {"ok": False, "reason": "subscription_required"}
         changed = self.engine.toggle_pause()
         if not changed:
             return {"ok": False, "reason": "return_to_game" if was_paused else "not_running"}
@@ -565,10 +704,12 @@ class Backend:
         """Switch only to a verified Fortnite window, if Windows permits it."""
         self._control_received("focus")
         try:
-            if not hasattr(self.io, "game_window_found") or not self.io.game_window_found():
-                self.engine.focus_result = "not_found"
-                return {"ok": False, "reason": "not_found"}
-            focused = bool(self.io.game_in_foreground() or self.io.focus_game())
+            focused = self.io.game_in_foreground()
+            if not focused:
+                if not hasattr(self.io, "game_window_found") or not self.io.game_window_found():
+                    self.engine.focus_result = "not_found"
+                    return {"ok": False, "reason": "not_found"}
+                focused = bool(self.io.focus_game())
             self.engine.focus_result = "focused" if focused else "denied"
             return {"ok": focused, "reason": "focused" if focused else "denied"}
         except Exception as exc:
@@ -581,18 +722,27 @@ class Backend:
     # ------------------------------------------------------------ config
     def set_config(self, patch: dict) -> dict:
         """Apply validated settings. Returns {"ok": bool, "rejected": [keys]}."""
+        if not isinstance(patch, dict):
+            return {"ok": False, "rejected": [], "error": "invalid_settings"}
+        with self._config_lock:
+            return self._apply_config(patch)
+
+    def _apply_config(self, patch: dict) -> dict:
+        cfg = replace(self.cfg)
         rejected = []
-        for k, v in (patch or {}).items():
+        for k, v in patch.items():
             try:
                 if k in NUM_LIMITS:
                     typ, lo, hi = NUM_LIMITS[k]
-                    setattr(self.cfg, k, max(lo, min(hi, typ(v))))
+                    setattr(cfg, k, max(lo, min(hi, typ(v))))
                 elif k in BOOLS:
-                    setattr(self.cfg, k, bool(v))
+                    if not isinstance(v, bool):
+                        raise ValueError(k)
+                    setattr(cfg, k, v)
                 elif k in STRS:
                     if v not in STRS[k]:
                         raise ValueError(k)
-                    setattr(self.cfg, k, v)
+                    setattr(cfg, k, v)
                 elif k in ("afk_start_hotkey", "afk_stop_hotkey", "afk_pause_hotkey"):
                     key = str(v).strip().upper()
                     allowed = (AFK_PAUSE_HOTKEY_CHOICES if k == "afk_pause_hotkey"
@@ -602,30 +752,38 @@ class Backend:
                               if name != k]
                     if (key not in allowed or
                             (k == "afk_start_hotkey" and key == "F12") or
-                            key in (getattr(self.cfg, name) for name in others)):
+                            key in (getattr(cfg, name) for name in others)):
                         raise ValueError(k)
-                    setattr(self.cfg, k, key)
+                    setattr(cfg, k, key)
                 elif k == "afk_keys":
                     keys = "".join(dict.fromkeys(c for c in str(v).lower() if c in "wasd"))
                     if not keys:
                         raise ValueError(k)
-                    self.cfg.afk_keys = keys
+                    cfg.afk_keys = keys
                 elif k == "update_url":
                     v = str(v).strip()
                     if v and not v.lower().startswith("https://"):
                         raise ValueError(k)
-                    self.cfg.update_url = v
+                    cfg.update_url = v
                 else:
                     rejected.append(k)
             except (TypeError, ValueError):
                 rejected.append(k)
         # Keep the pause range valid even if only one endpoint was edited.
-        if self.cfg.afk_pause_min > self.cfg.afk_pause_max:
-            if "afk_pause_min" in (patch or {}):
-                self.cfg.afk_pause_max = self.cfg.afk_pause_min
+        if cfg.afk_pause_min > cfg.afk_pause_max:
+            if "afk_pause_min" in patch:
+                cfg.afk_pause_max = cfg.afk_pause_min
             else:
-                self.cfg.afk_pause_min = self.cfg.afk_pause_max
-        self._save_cfg()
+                cfg.afk_pause_min = cfg.afk_pause_max
+        changes = {name: value for name, value in vars(cfg).items()
+                   if value != getattr(self.cfg, name)}
+        if changes:
+            try:
+                cfg.save(self.cfg_path)
+            except OSError:
+                return {"ok": False, "rejected": rejected, "error": "save_failed"}
+            for name, value in changes.items():
+                setattr(self.cfg, name, value)
         return {"ok": not rejected, "rejected": rejected}
 
     # ------------------------------------------------------------ templates
@@ -786,28 +944,46 @@ class Backend:
         return list(self._release_news)
 
     # ------------------------------------------------------------ updates
+    def update_check_async(self, url: str | None = None) -> dict:
+        """Queue a manual check so the JS bridge stays responsive."""
+        if not self._update_lock.acquire(blocking=False):
+            return dict(self._upd)
+        try:
+            if self._upd["status"] in ("checking", "ready", "downloading", "installer_started"):
+                return dict(self._upd)
+            self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
+            queued = dict(self._upd)
+            threading.Thread(target=self.update_check, args=(url,),
+                             name="manual-update-check", daemon=True).start()
+            return queued
+        finally:
+            self._update_lock.release()
+
     def update_check(self, url: str | None = None) -> dict:
         """Check releases without triggering an installation.
 
         The locking prevents the 5-minute background poll from racing a click
         to exit-and-update or a cached-installer download.
         """
+        with self._update_lock:
+            return self._check_updates(url)
+
+    def _check_updates(self, url: str | None) -> dict:
         if self.release_mode:
-            with self._update_lock:
-                if self._upd["status"] in ("ready", "downloading", "installer_started"):
-                    return dict(self._upd)
-                self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
-                self._release_manifest = None
-                try:
-                    self._release_manifest = release_updater.latest_release(self.version)
-                    if self._release_manifest is None:
-                        self._upd = {"status": "latest", "version": self.version, "notes": "", "error": ""}
-                    else:
-                        self._upd = {"status": "available", "version": self._release_manifest["version"],
-                                     "notes": self._release_manifest.get("notes", ""), "error": ""}
-                except Exception as exc:
-                    self._upd = {"status": "error", "version": "", "notes": "", "error": str(exc)}
+            if self._upd["status"] in ("ready", "downloading", "installer_started"):
                 return dict(self._upd)
+            self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
+            self._release_manifest = None
+            try:
+                self._release_manifest = release_updater.latest_release(self.version)
+                if self._release_manifest is None:
+                    self._upd = {"status": "latest", "version": self.version, "notes": "", "error": ""}
+                else:
+                    self._upd = {"status": "available", "version": self._release_manifest["version"],
+                                 "notes": self._release_manifest.get("notes", ""), "error": ""}
+            except Exception as exc:
+                self._upd = {"status": "error", "version": "", "notes": "", "error": str(exc)}
+            return dict(self._upd)
         url = (url if url is not None else self.cfg.update_url).strip()
         if not url:
             self._upd = {"status": "need_url", "version": "", "notes": "", "error": ""}
@@ -818,6 +994,7 @@ class Backend:
                 self._upd = {"status": "error", "version": "", "notes": "", "error": "https"}
                 return dict(self._upd)
         self._upd = {"status": "checking", "version": "", "notes": "", "error": ""}
+        self._manifest = None
         try:
             version, manifest = updater.check(self.base, url)
         except Exception as exc:

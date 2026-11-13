@@ -52,7 +52,8 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(self.store.validate(key, device1)["ok"])
         self.assertTrue(self.store.validate(key, device1)["ok"])
         self.assertEqual(self.store.validate(key, device2)["error"], "another_device")
-        self.assertFalse(self.store.validate(key[:-1] + "0", device1)["ok"])
+        wrong_suffix = '1' if key.endswith('0') else '0'
+        self.assertFalse(self.store.validate(key[:-1] + wrong_suffix, device1)["ok"])
         self.assertTrue(self.store.reset_device(123))
         self.assertTrue(self.store.validate(key, device2)["ok"])
 

@@ -25,8 +25,9 @@ def test_gold_ui_preserves_original_control_paths():
     original = (ROOT / "ui" / "app.js").read_text(encoding="utf-8")
     assert 'const originalRender = render;' in source
     assert 'render = renderGold;' in source
-    assert 'data-page="afk"' in source
-    assert 'data-act="ptest"' in source
+    assert '["home", "subscriptions", "updates", "support", "settings"]' in source
+    assert 'data-page="afk"' in original
+    assert 'data-act="ptest"' in original
     assert 'data-act="start"' in source
     assert 'data-act="stop"' in source
     assert 'function render(' in original

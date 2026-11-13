@@ -20,7 +20,7 @@ from PIL import ImageGrab
 if sys.platform != "win32":
     raise ImportError("winio only works on Windows")
 
-user32 = ctypes.windll.user32
+user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.windll.kernel32
 # Explicit pointer-sized signatures prevent truncated HWND/HANDLE values on Win64.
 user32.GetForegroundWindow.restype = wintypes.HWND
@@ -34,8 +34,9 @@ user32.IsWindowVisible.argtypes = (wintypes.HWND,)
 user32.IsWindowVisible.restype = wintypes.BOOL
 user32.SetCursorPos.argtypes = (ctypes.c_int, ctypes.c_int)
 user32.SetCursorPos.restype = wintypes.BOOL
-user32.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
-user32.FindWindowW.restype = wintypes.HWND
+_EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+user32.EnumWindows.argtypes = (_EnumWindowsProc, wintypes.LPARAM)
+user32.EnumWindows.restype = wintypes.BOOL
 user32.GetWindowTextW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
 user32.GetWindowTextW.restype = ctypes.c_int
 user32.GetWindowThreadProcessId.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.DWORD))
@@ -87,13 +88,25 @@ class INPUT(ctypes.Structure):
 
 def _send(inp: INPUT) -> None:
     if user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT)) != 1:
-        code = kernel32.GetLastError()
+        code = ctypes.get_last_error()
         raise OSError(f"SendInput returned 0 (Win32 error={code}; permissions or protected app).")
 
 
 def _key(scan: int, up: bool) -> None:
     flags = KEYEVENTF_SCANCODE | (KEYEVENTF_KEYUP if up else 0)
     _send(INPUT(INPUT_KEYBOARD, _INPUTUNION(ki=KEYBDINPUT(0, scan, flags, 0, 0))))
+
+
+def _release_all(release, held) -> None:
+    """Attempt every release before reporting a rejected Windows input."""
+    error = None
+    for value in reversed(held):
+        try:
+            release(value)
+        except OSError as exc:
+            error = error or exc
+    if error is not None:
+        raise error
 
 
 def _mouse(flags: int) -> None:
@@ -108,18 +121,16 @@ class WinIO:
         "?action=launch&silent=true"
     )
 
-    def launch_game(self) -> bool:
-        """Request the user's installed Epic Launcher to start Fortnite.
-
-        No direct process injection, authentication or anti-cheat interaction.
-        Returns protocol-dispatch status, not a claim that Fortnite is ready.
-        """
-        if self.game_window_found():
-            return self.focus_game() or self.game_window_found()
+    def epic_launcher_available(self) -> bool:
         try:
             with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "com.epicgames.launcher"):
-                pass
+                return True
         except OSError:
+            return False
+
+    def launch_game(self) -> bool:
+        """Request launch through the installed Epic Launcher protocol."""
+        if not self.epic_launcher_available():
             return False
         os.startfile(self.EPIC_FORTNITE_URI)
         return True
@@ -211,11 +222,7 @@ class WinIO:
             while time.monotonic() < end and not should_abort():
                 time.sleep(min(.03, end - time.monotonic()))
         finally:
-            for scan in reversed(held):
-                try:
-                    _key(scan, up=True)
-                except OSError:
-                    pass
+            _release_all(lambda scan: _key(scan, up=True), held)
 
     def slide_sequence(self, seconds: float, jump: bool,
                        should_abort: Callable[[], bool]) -> None:
@@ -259,14 +266,7 @@ class WinIO:
                 up("space")
             pause(max(0.0, min(float(seconds), 4.0) - .9))
         finally:
-            release_error = None
-            for key in reversed(held):
-                try:
-                    _key(SCANCODES[key], up=True)
-                except OSError as exc:
-                    release_error = release_error or exc
-            if release_error is not None:
-                raise release_error
+            _release_all(lambda key: _key(SCANCODES[key], up=True), held)
 
     def move_mouse_relative(self, dx: int, dy: int, seconds: float,
                             should_abort: Callable[[], bool]) -> None:
@@ -320,13 +320,16 @@ class WinIO:
             while not should_abort() and time.monotonic() < end:
                 time.sleep(min(.03, end - time.monotonic()))
         finally:
+            releases = [MOUSEEVENTF_RIGHTUP]
             if left_down:
-                _mouse(MOUSEEVENTF_LEFTUP)
-            _mouse(MOUSEEVENTF_RIGHTUP)
+                releases.append(MOUSEEVENTF_LEFTUP)
+            _release_all(_mouse, releases)
 
     def foreground_title(self) -> str:
         """Title of the active window; used only for diagnostics."""
-        hwnd = user32.GetForegroundWindow()
+        return self._window_title(user32.GetForegroundWindow())
+
+    def _window_title(self, hwnd) -> str:
         if not hwnd:
             return ""
         buf = ctypes.create_unicode_buffer(512)
@@ -349,8 +352,7 @@ class WinIO:
             while time.monotonic() < end and not should_abort():
                 time.sleep(min(.05, max(0., end - time.monotonic())))
         finally:
-            for scan in reversed(held):
-                _key(scan, up=True)
+            _release_all(lambda scan: _key(scan, up=True), held)
 
     def _process_name(self, hwnd) -> str:
         """Read the executable name of a visible window, without injecting or hooking."""
@@ -372,33 +374,45 @@ class WinIO:
         finally:
             kernel32.CloseHandle(handle)
 
-    def _looks_like_game(self, hwnd, title: str) -> bool:
+    def _looks_like_game(self, hwnd) -> bool:
         # Prefer process identity to a browser tab or unrelated window whose
         # title happens to contain "Fortnite". If Windows denies reading the
         # process name, the exact window title is a conservative fallback.
-        process = self._process_name(hwnd).casefold()
+        process = self._process_name(hwnd)
         if process:
-            return process.startswith("fortniteclient-") or process == "fortniteclient.exe"
-        return title.strip().casefold() == self.window_title.casefold()
+            return self._is_game_process(process)
+        return self._window_title(hwnd).casefold() == self.window_title.casefold()
+
+    @staticmethod
+    def _is_game_process(process: str) -> bool:
+        process = process.casefold()
+        return (process == "fortniteclient.exe" or
+                (process.startswith("fortniteclient-") and
+                 not process.endswith(("_eac.exe", "_eac_eos.exe", "_be.exe"))))
 
     def _find_game(self):
-        found = user32.FindWindowW(None, self.window_title)
-        if found and self._looks_like_game(found, self.window_title):
-            return found
-        # Game window titles may contain a prefix/suffix. Search only visible
-        # top-level windows; never search process memory or inject into a game.
-        windows = []
+        # Prefer a verified, titled game window to an auxiliary window or an
+        # exact-title match whose process could not be read.
+        verified = fallback = untitled = 0
         def callback(hwnd, _):
+            nonlocal verified, fallback, untitled
             if user32.IsWindowVisible(hwnd):
-                buf = ctypes.create_unicode_buffer(512)
-                user32.GetWindowTextW(hwnd, buf, len(buf))
-                if self._looks_like_game(hwnd, buf.value):
-                    windows.append(hwnd)
-                    return False
+                title = self._window_title(hwnd)
+                process = self._process_name(hwnd)
+                if self._is_game_process(process):
+                    if title:
+                        verified = hwnd
+                        return False
+                    untitled = untitled or hwnd
+                elif not process and title.casefold() == self.window_title.casefold():
+                    fallback = fallback or hwnd
             return True
-        enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(callback)
-        user32.EnumWindows(enum_proc, 0)
-        return windows[0] if windows else 0
+        ctypes.set_last_error(0)
+        if not user32.EnumWindows(_EnumWindowsProc(callback), 0) and not verified:
+            error = ctypes.get_last_error()
+            if error:
+                raise ctypes.WinError(error)
+        return verified or fallback or untitled
 
     def game_window_found(self) -> bool:
         return bool(self._find_game())
@@ -408,7 +422,7 @@ class WinIO:
 
     def game_in_foreground(self) -> bool:
         hwnd = user32.GetForegroundWindow()
-        return bool(hwnd and self._looks_like_game(hwnd, self.foreground_title()))
+        return bool(hwnd and self._looks_like_game(hwnd) and hwnd == user32.GetForegroundWindow())
 
     def focus_game(self) -> bool:
         hwnd = self._find_game()
@@ -432,10 +446,14 @@ class HotkeyPoller(threading.Thread):
                  Callable[[], dict[str, Callable[[], None]]]):
         super().__init__(daemon=True, name="hotkeys")
         self.bindings = bindings
+        self._shutdown = threading.Event()
+
+    def close(self) -> None:
+        self._shutdown.set()
 
     def run(self) -> None:
         prev = {vk: False for vk in VK.values()}
-        while True:
+        while not self._shutdown.is_set():
             try:
                 configured = self.bindings() if callable(self.bindings) else self.bindings
                 active = {VK[key]: cb for key, cb in configured.items() if key in VK}
@@ -456,4 +474,4 @@ class HotkeyPoller(threading.Thread):
                     threading.Thread(target=invoke, name=f"hotkey-{vk}",
                                      daemon=True).start()
                 prev[vk] = down
-            time.sleep(0.03)
+            self._shutdown.wait(0.03)
