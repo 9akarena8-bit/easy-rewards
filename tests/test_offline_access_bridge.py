@@ -99,9 +99,9 @@ class OfflineAccessBridgeTests(unittest.TestCase):
                 modern = Mock()
                 modern.main.return_value = 0
                 classic = Mock()
-                with patch.object(sys, "argv", ["EasyRewards.exe", flag]), patch.dict(
-                    sys.modules, {"webapp": modern, "app_classic": classic}
-                ):
+                with patch.object(sys, "platform", "win32"), patch.object(
+                    sys, "argv", ["EasyRewards.exe", flag]
+                ), patch.dict(sys.modules, {"webapp": modern, "app_classic": classic}):
                     self.assertEqual(app.main(), 0)
                 modern.main.assert_called_once()
                 classic.main.assert_not_called()
