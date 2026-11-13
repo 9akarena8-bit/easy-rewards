@@ -15,6 +15,21 @@ import updater  # noqa: E402
 updater.ALLOWED_SCHEMES = {"https", "file"}
 
 
+def _release_source(work: Path):
+    """A controlled source fixture never copies browser profiles or real keys."""
+    for name in ("app.py", "updater.py", "i18n.py", "VERSION", "make_release.py",
+                 "tools/make_release.py", "tools/make_logo.py"):
+        target = work / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, target)
+    (work / "templates" / "ru").mkdir(parents=True)
+    (work / "templates" / ".keep").touch()
+    (work / "ui").mkdir()
+    (work / "ui" / "index.html").write_text("<button>Start</button>")
+    (work / "assets").mkdir()
+    (work / "assets" / "license-public.pem").write_text("PUBLIC TEST KEY")
+
+
 def _make_install(tmp: Path, version="1.0.0") -> Path:
     base = tmp / "inst"
     base.mkdir()
@@ -102,7 +117,15 @@ def test_http_is_refused():
 def test_make_release_roundtrip():
     tmp = Path(tempfile.mkdtemp())
     work = tmp / "src"
-    shutil.copytree(ROOT, work, ignore=shutil.ignore_patterns(".venv", "dist", "__pycache__", "_backup"))
+    _release_source(work)
+    private_paths = ("build/cache.dat", "edge-design-home/arbitration_service_config.json",
+                     "saved-data/chat.json", "owner-licensing/private-key.pem",
+                     "merchant_service/.env", "merchant_service/issued-licenses.sqlite3",
+                     "assets/private-key.pem", "offline-license.json", "visual-home.html")
+    for name in private_paths:
+        target = work / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("PRIVATE TEST DATA")
     (work / "templates" / "ru" / "start_secret.png").write_bytes(b"personal")
     (work / "config.json").write_text("{}")
     subprocess.run([sys.executable, str(work / "tools" / "make_release.py"), "2.0.0", "notes"], check=True,
@@ -113,6 +136,11 @@ def test_make_release_roundtrip():
     assert not any("config.json" in n or "start_secret" in n or "dist/" in n for n in names)
     m = json.loads((work / "dist" / "version.json").read_text())
     assert m["version"] == "2.0.0" and m["sha256"] == hashlib.sha256(z.read_bytes()).hexdigest()
+    assert "EasyRewards/assets/license-public.pem" in names
+    for name in private_paths:
+        assert "EasyRewards/" + name not in names
+        assert name not in m["files"]
+        assert not (work / "dist" / "files" / name).exists()
 
 
 if __name__ == "__main__":
@@ -125,7 +153,7 @@ if __name__ == "__main__":
 def test_delta_update_downloads_only_changed_files():
     tmp = Path(tempfile.mkdtemp())
     work = tmp / "src"
-    shutil.copytree(ROOT, work, ignore=shutil.ignore_patterns(".venv", "dist", "__pycache__", "_backup", "config.json"))
+    _release_source(work)
     mk = [sys.executable, str(work / "tools" / "make_release.py")]
     subprocess.run(mk + ["1.0.0"], check=True, capture_output=True)
     base = tmp / "inst"  # simulate a user who installed 1.0.0 from the zip

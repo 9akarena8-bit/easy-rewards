@@ -1,6 +1,7 @@
 """v1.3.3 regressions: visibility, probe diagnostics, shutdown lifecycle."""
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from pathlib import Path
@@ -73,6 +74,40 @@ def test_notepad_probe_only_when_notepad_in_foreground(tmp_path):
     io.process = "explorer.exe"
     assert eng.input_probe("notepad")["status"] == "waiting_window"
     assert io.actions == [("press", "w")]
+
+
+def test_packaged_probe_requires_a_license_for_both_targets(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    io = FakeInput(process="notepad.exe")
+    engine = Engine(Config(), io, tmp_path)
+    assert engine.input_probe()["status"] == "subscription_required"
+    assert engine.input_probe("notepad")["status"] == "subscription_required"
+    assert not io.actions
+
+
+def test_packaged_probe_allows_active_license_and_blocks_after_expiry(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    io = FakeInput()
+    active = True
+    engine = Engine(Config(), io, tmp_path, probe_allowed=lambda: active)
+    assert engine.input_probe()["status"] == "sent"
+    active = False
+    assert engine.input_probe()["status"] == "subscription_required"
+    assert io.actions == [("hold", ("w",))]
+
+
+def test_probe_rechecks_license_before_pressing_a_key(tmp_path):
+    class ExpiringInput(FakeInput):
+        def game_in_foreground(self):
+            nonlocal active
+            active = False
+            return True
+
+    active = True
+    io = ExpiringInput()
+    engine = Engine(Config(), io, tmp_path, probe_allowed=lambda: active)
+    assert engine.input_probe()["status"] == "subscription_required"
+    assert not io.actions
 
 
 def test_probe_prevents_parallel_running_worker(tmp_path):

@@ -62,6 +62,10 @@ class PrivateDemoTests(unittest.TestCase):
         return data["token"]
 
     def login_owner(self):
+        # no-referrer on this page would make Chromium send Origin: null for the form.
+        code, _, headers = self.request("GET", "/admin/login")
+        self.assertEqual(code, 200)
+        self.assertEqual(headers["Referrer-Policy"], "same-origin")
         code, _, headers = self.request("POST", "/admin/login", form={"credential": self.owner_key})
         self.assertEqual(code, 303)
         cookie = headers["Set-Cookie"]
@@ -148,6 +152,10 @@ class PrivateDemoTests(unittest.TestCase):
         with patch("merchant_service.orders.time.time", return_value=time.time() + 3601):
             self.assertEqual(self.request("GET", detail, cookie=owner)[0], 403)
             self.assertEqual(self.request("GET", "/api/v1/orders", bearer=self.buyer)[0], 403)
+        with self.assertRaisesRegex(PermissionError, "owner_required"):
+            self.store.review("buyer-demo", order["order_id"], "confirm",
+                              "Synthetic statement", "DEMO-NOT-OWNER", 5900)
+        self.assertFalse(self.access()["active"])
         self.assertEqual(self.store.detail(order["order_id"])["events"], [])
 
     def test_skin_cannot_activate_and_reference_cannot_pay_twice(self):
@@ -186,3 +194,32 @@ class PrivateDemoTests(unittest.TestCase):
         for _ in range(10):
             self.assertEqual(self.request("POST", "/api/v1/session", payload={"credential": "bad"})[0], 403)
         self.assertEqual(self.request("POST", "/api/v1/session", payload={"credential": "bad"})[0], 429)
+
+    def test_referral_discount_is_demo_only_and_refund_blocks_reserved_discount(self):
+        def referral(token):
+            return self.request("GET", "/api/v1/referral", bearer=token)[1]
+
+        inviter = referral(self.buyer)
+        self.assertEqual(inviter["available_discounts"], 0)
+        for account, expected in ((self.buyer, 400), (self.other, 200), (self.other, 200)):
+            self.assertEqual(self.request("POST", "/api/v1/referral", bearer=account,
+                                          payload={"code": inviter["code"]})[0], expected)
+        self.assertEqual(referral(self.buyer)["invited"], 1)
+        self.store.grant_friend_access("other-demo", 7)
+        self.assertEqual(referral(self.buyer)["available_discounts"], 0)
+        qualifying = self.create(bearer=self.other)
+        owner = self.login_owner()
+        self.assertEqual(self.admin_action(owner, qualifying, "confirm", reference="DEMO-REF-1",
+                                           amount_kopeks=5900), 303)
+        self.assertEqual(referral(self.buyer)["available_discounts"], 1)
+        self.assertEqual(referral(self.other)["available_discounts"], 1)
+        discount = self.create()
+        self.assertEqual(discount["amount_kopeks"], 5310)
+        self.assertEqual(discount["discount_percent"], 10)
+        self.assertEqual(self.create(), discount)
+        self.assertEqual(referral(self.buyer)["available_discounts"], 0)
+        self.assertEqual(self.admin_action(owner, qualifying, "refund"), 303)
+        self.assertEqual(referral(self.other)["available_discounts"], 0)
+        self.assertEqual(self.admin_action(owner, discount, "confirm", reference="DEMO-REF-2",
+                                           amount_kopeks=5310), 409)
+        self.assertEqual(self.create(request_id="after-refund")["amount_kopeks"], 5900)

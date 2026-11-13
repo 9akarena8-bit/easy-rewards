@@ -65,7 +65,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ("text/html" if html else "application/json") + "; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Content-Security-Policy",
                          "default-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'")
         self.send_header("Content-Length", str(len(body)))
@@ -157,6 +157,13 @@ class Handler(BaseHTTPRequestHandler):
             result = {"ok": True}
         elif path == ["entitlement"] and not post:
             result = store.entitlement(account)
+        elif path == ["referral"] and not post:
+            result = store.referral(account)
+        elif path == ["referral"] and post:
+            data = self.body("application/json")
+            if set(data) != {"code"}:
+                raise ValueError("invalid_fields")
+            result = store.apply_referral(account, data["code"])
         elif path == ["orders"] and post:
             data = self.body("application/json")
             if set(data) != {"plan", "method", "request_id"}:

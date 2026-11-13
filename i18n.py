@@ -1,7 +1,9 @@
 """Interface translations: English, Russian, Ukrainian."""
 from __future__ import annotations
+import json
+from pathlib import Path
 
-LANGS = ("ru", "en", "uk")
+LANGS = ("ru", "en", "uk", "fr", "pl", "ar")
 
 STRINGS: dict[str, dict[str, str]] = {
     "en": {
@@ -821,6 +823,7 @@ STRINGS["ru"].update({
     "discord.title": "Уведомления в Discord",
     "discord.intro": "Получай сообщения о запуске, остановке, паузе, кнопке «Играть снова» и ошибках.",
     "discord.webhook": "Discord Webhook URL (секретная ссылка)",
+    "discord.webhook_help": "Это личный адрес канала Discord: приложение отправит туда только выбранные уведомления о запуске и ошибках. Если они не нужны, оставь поле пустым и выключи отправку.",
     "discord.configured": "Webhook сохранён локально. Секретная ссылка не отображается.",
     "discord.unconfigured": "Webhook ещё не подключён.",
     "discord.enabled": "Включить отправку уведомлений",
@@ -839,6 +842,7 @@ STRINGS["en"].update({
     "discord.title": "Discord notifications",
     "discord.intro": "Alerts for start, stop, pause, Play Again and application errors.",
     "discord.webhook": "Discord Webhook URL (keep secret)",
+    "discord.webhook_help": "A private Discord channel address. The launcher sends only the selected start and error notices. Leave it blank and keep notifications off if you do not need them.",
     "discord.configured": "Webhook stored locally. Secret URL is never displayed.",
     "discord.unconfigured": "No webhook configured yet.",
     "discord.enabled": "Enable Discord notifications",
@@ -857,6 +861,7 @@ STRINGS["uk"].update({
     "discord.title": "Сповіщення в Discord",
     "discord.intro": "Сповіщення про запуск, зупинку, паузу, «Грати знову» та помилки.",
     "discord.webhook": "Discord Webhook URL (секретне посилання)",
+    "discord.webhook_help": "Приватна адреса каналу Discord. Застосунок надсилатиме туди лише вибрані сповіщення про запуск і помилки. Якщо вони не потрібні, залиш поле порожнім і вимкни надсилання.",
     "discord.configured": "Webhook збережено локально. Секретне посилання не відображається.",
     "discord.unconfigured": "Webhook ще не підключено.",
     "discord.enabled": "Увімкнути Discord-сповіщення",
@@ -1035,3 +1040,53 @@ STRINGS["uk"].update({
     "state.lobby_loading": "Завантаження після кнопки лобі",
     "state.lobby_attention": "Лобі: потрібна перевірка",
 })
+
+STRINGS.update({
+    "fr": {
+        "nav.home": "Accueil", "nav.subscriptions": "Abonnement",
+        "nav.updates": "Actualités", "nav.support": "Assistance",
+        "nav.settings": "Paramètres", "set.ui_language": "Langue de l’interface",
+        "set.game_language": "Langue du jeu", "set.theme": "Thème",
+        "theme.dark": "Sombre", "theme.light": "Clair",
+        "upd.check": "Rechercher des mises à jour", "upd.checking": "Recherche…",
+        "upd.version": "Version installée : {v}", "upd.failed": "Échec de la mise à jour : {err}",
+        "btn.start": "Démarrer", "btn.stop": "Arrêter", "btn.pause": "Pause", "btn.resume": "Reprendre",
+    },
+    "pl": {
+        "nav.home": "Strona główna", "nav.subscriptions": "Subskrypcja",
+        "nav.updates": "Aktualności", "nav.support": "Pomoc",
+        "nav.settings": "Ustawienia", "set.ui_language": "Język interfejsu",
+        "set.game_language": "Język gry", "set.theme": "Motyw",
+        "theme.dark": "Ciemny", "theme.light": "Jasny",
+        "upd.check": "Sprawdź aktualizacje", "upd.checking": "Sprawdzanie…",
+        "upd.version": "Zainstalowana wersja: {v}", "upd.failed": "Błąd aktualizacji: {err}",
+        "btn.start": "Uruchom", "btn.stop": "Zatrzymaj", "btn.pause": "Wstrzymaj", "btn.resume": "Wznów",
+    },
+    "ar": {
+        "nav.home": "الرئيسية", "nav.subscriptions": "الاشتراك",
+        "nav.updates": "الأخبار", "nav.support": "الدعم",
+        "nav.settings": "الإعدادات", "set.ui_language": "لغة الواجهة",
+        "set.game_language": "لغة اللعبة", "set.theme": "المظهر",
+        "theme.dark": "داكن", "theme.light": "فاتح",
+        "upd.check": "التحقق من التحديثات", "upd.checking": "جارٍ التحقق…",
+        "upd.version": "الإصدار المثبّت: {v}", "upd.failed": "تعذّر التحديث: {err}",
+        "btn.start": "بدء", "btn.stop": "إيقاف", "btn.pause": "إيقاف مؤقت", "btn.resume": "استئناف",
+    },
+})
+
+for _lang in ("fr", "pl", "ar"):
+    _translation_file = Path(__file__).resolve().parent / "locales" / f"{_lang}.json"
+    if _translation_file.is_file():
+        STRINGS[_lang].update(json.loads(_translation_file.read_text(encoding="utf-8")))
+    STRINGS[_lang] = {**STRINGS["en"], **STRINGS[_lang]}
+
+for _strings in STRINGS.values():
+    _strings.update({
+        "lang.fr": "Français", "lang.pl": "Polski", "lang.ar": "العربية",
+        "lang.short_fr": "FR", "lang.short_pl": "PL", "lang.short_ar": "AR",
+    })
+
+for _lang in LANGS:
+    _ui_file = Path(__file__).resolve().parent / "locales" / f"ui_{_lang}.json"
+    if _ui_file.is_file():
+        STRINGS[_lang].update(json.loads(_ui_file.read_text(encoding="utf-8")))

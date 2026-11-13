@@ -12,6 +12,8 @@ on:
       - 'VERSION'
       - 'requirements*.txt'
       - 'BUILD_INSTALLER.bat'
+      - 'EasyRewards.spec'
+      - 'merchant_service/requirements-offline.txt'
       - 'installer.iss'
       - '.github/workflows/build-windows.yml'
 
@@ -43,7 +45,7 @@ jobs:
       - name: Install dependencies and run regression tests
         shell: pwsh
         run: |
-          python -m pip install -r requirements.txt -r requirements-ui.txt pytest 'pyinstaller>=6,<7'
+          python -m pip install -r requirements.txt -r requirements-ui.txt -r merchant_service/requirements-offline.txt pytest 'pyinstaller>=6,<7'
           python -m compileall -q core.py backend.py webapp.py winio.py release_updater.py tests
           python -m pytest -q
           if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed' }
@@ -58,7 +60,8 @@ jobs:
       - name: Build EXE and installer
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name EasyRewards --icon 'assets/icon.ico' --add-data 'ui:ui' --add-data 'assets:assets' --add-data 'VERSION:.' --collect-submodules webview app.py
+          if (!(Test-Path 'assets/license-public.pem')) { throw 'Public verification key missing' }
+          python -m PyInstaller --noconfirm --clean EasyRewards.spec
           if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed' }
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
           if (!(Test-Path $iscc)) { $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 7/ISCC.exe' }

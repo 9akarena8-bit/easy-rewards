@@ -14,12 +14,20 @@ if not exist ".buildenv\Scripts\python.exe" (
     if errorlevel 1 goto error
 )
 
-".buildenv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements.txt -r requirements-ui.txt "pyinstaller>=6,<7"
+".buildenv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements.txt -r requirements-ui.txt -r merchant_service\requirements-offline.txt "pyinstaller>=6,<7"
 if errorlevel 1 goto error
+
+if not exist "assets\license-public.pem" (
+    echo ERROR: missing assets\license-public.pem
+    echo Launch OWNER_PANEL.bat, create an owner key and copy the PUBLIC key to assets.
+    echo Never copy private-key.pem into the project or installer.
+    pause
+    exit /b 1
+)
 
 echo.
 echo [1/2] Building Windows executable...
-".buildenv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onedir --windowed --name EasyRewards --icon "assets\icon.ico" --add-data "ui:ui" --add-data "assets:assets" --add-data "VERSION:." --collect-submodules webview app.py
+".buildenv\Scripts\python.exe" -m PyInstaller --noconfirm --clean EasyRewards.spec
 if errorlevel 1 goto error
 
 echo.
@@ -41,7 +49,7 @@ echo [2/2] Building setup.exe...
 "%ISCC%" "installer.iss"
 if errorlevel 1 goto error
 echo.
-echo READY: release\EasyRewards_Setup_1.2.4.exe
+echo READY: release\EasyRewards_Setup_1.4.3.exe
 pause
 exit /b 0
 :error

@@ -9,6 +9,7 @@ import json
 import os
 import tempfile
 import random
+import sys
 import threading
 import time
 from dataclasses import dataclass, field, asdict, fields
@@ -18,7 +19,7 @@ from typing import Callable, Optional
 import cv2
 import numpy as np
 
-from i18n import tr
+from i18n import LANGS, tr
 from replay_detect import yellow_replay_button
 
 # Template file names are "<role>_<anything>.png".
@@ -132,7 +133,7 @@ class Config:
                         or any(k not in "wasd" for k in value)):
                     continue
             elif name in ("language", "ui_language"):
-                if not isinstance(value, str) or value not in (languages if name == "language" else {"ru", "en", "uk"}):
+                if not isinstance(value, str) or value not in (languages if name == "language" else LANGS):
                     continue
             elif name == "theme":
                 if value not in ("dark", "light"):
@@ -236,12 +237,14 @@ class Engine:
 
     def __init__(self, cfg: Config, io, templates_root: Path,
                  log: Callable[..., None] = _default_log,
-                 on_reward: Callable[[], None] | None = None):
+                 on_reward: Callable[[], None] | None = None,
+                 *, probe_allowed: Callable[[], bool] | None = None):
         self.cfg = cfg
         self.io = io
         self.templates_root = Path(templates_root)
         self.log = log
         self.on_reward = on_reward
+        self._probe_allowed = probe_allowed
         self.rewards = 0
         self._reward_visible = False
         self._reward_absent_since: float | None = None
@@ -296,6 +299,9 @@ class Engine:
         self._screen_epoch = 0
         self._next_focus_attempt = 0.0
         self.focus_result = ""
+        self._control_lock = threading.RLock()
+        self._initialization_lock = threading.Lock()
+        self._start_request = None
         self._restart_pending = False
         self.replay_count = 0
         self.replay_source = ""
@@ -335,21 +341,46 @@ class Engine:
         self.templates = load_templates(self.templates_root, self.cfg.language)
         return len(self.templates)
 
-    def start(self) -> None:
-        if self.running:
-            if self._stop.is_set():
-                # F7 immediately after F8 is queued, not silently discarded.
-                self._restart_pending = True
-                self.log("log.restart_queued")
-            elif self.paused:
-                return self.toggle_pause()
-            return True
-        n = self.reload_templates()
+    def start(self) -> bool:
+        with self._control_lock:
+            if self.running:
+                if self._stop.is_set():
+                    if not self._restart_pending:
+                        self._restart_pending = True
+                        threading.Thread(target=self._restart_after, args=(self._thread,),
+                                         name="engine-restart", daemon=True).start()
+                        self.log("log.restart_queued")
+                    return True
+                return self.toggle_pause() if self.paused else True
+            if self._start_request is not None:
+                return True
+            self._restart_pending = False
+            request = self._start_request = object()
+        return self._initialize_start(request)
+
+    def _initialize_start(self, request: object) -> bool:
+        try:
+            with self._initialization_lock:
+                with self._control_lock:
+                    if request is not self._start_request:
+                        return False
+                n = self.reload_templates()
+                foreground = bool(self.io.game_in_foreground())
+                with self._control_lock:
+                    if request is not self._start_request:
+                        return False
+                    return self._start_worker(n, foreground)
+        finally:
+            with self._control_lock:
+                if request is self._start_request:
+                    self._start_request = None
+
+    def _start_worker(self, n: int, foreground: bool) -> bool:
         # Anti-AFK mode must be runnable on a fresh install, even before
         # any screen templates have been captured.
         if n == 0 and not self.cfg.afk_enabled:
             self.log("log.no_templates", lang=self.cfg.language)
-            return
+            return False
         if n == 0:
             self.log("log.afk_only")
         self.log("log.started", n=n, lang=self.cfg.language)
@@ -357,7 +388,7 @@ class Engine:
         self._stop.clear()
         self._paused.clear()
         self.pause_reason = ""
-        self._ever_foreground = bool(self.io.game_in_foreground())
+        self._ever_foreground = foreground
         self._tick_mark = time.monotonic()
         self._next_afk = time.monotonic() + min(0.7, self._afk_wait())
         self.state = "starting"
@@ -399,23 +430,21 @@ class Engine:
         finish on the worker thread and acknowledge the stop; starting another
         concurrent worker during this phase is forbidden.
         """
-        thread = self._thread
-        self._restart_pending = False
-        if thread is None or not thread.is_alive():
-            self.state = "stopped"
-            return
-        self._stop.set()
-        self._screen_epoch += 1
-        self._restart_pending = False
-        self.state = "stopping"
-        if thread is threading.current_thread():
-            return
-        thread.join(timeout=0.35)
-        # The worker may finish between the initial is_alive() check and our
-        # "stopping" assignment. In that race it has already set "stopped",
-        # and the controller must not leave the stale "stopping" label.
-        if not thread.is_alive():
-            self.state = "stopped"
+        with self._control_lock:
+            thread = self._thread
+            self._start_request = None
+            self._restart_pending = False
+            if thread is None or not thread.is_alive():
+                self.state = "stopped"
+                return
+            self._stop.set()
+            self._screen_epoch += 1
+            self.state = "stopping"
+        if thread is not threading.current_thread():
+            thread.join(timeout=0.35)
+        with self._control_lock:
+            if self._thread is thread and not thread.is_alive():
+                self.state = "stopped"
         # _loop's finally clause still owns the single stopped log entry.
 
     def _pause_for_focus_loss(self) -> None:
@@ -469,6 +498,14 @@ class Engine:
         self.log("log.paused")
         return True
 
+    def _probe_access_allowed(self) -> bool:
+        if self._probe_allowed is None:
+            return not getattr(sys, "frozen", False)
+        try:
+            return bool(self._probe_allowed())
+        except Exception:
+            return False
+
     def input_probe(self, target: str = "fortnite") -> dict:
         """Deliberate, bounded diagnostic. Never sends to an unexpected app.
 
@@ -486,6 +523,9 @@ class Engine:
             elif self.running:
                 self.probe_status = "busy"
                 self.probe_detail = "Stop Anti-AFK before testing"
+            elif not self._probe_access_allowed():
+                self.probe_status = "subscription_required"
+                self.probe_detail = "An active license is required for the input test"
             else:
                 def ready() -> bool:
                     if target == "notepad":
@@ -497,13 +537,20 @@ class Engine:
                     self.probe_detail = f"{target} is not the active window"
                 else:
                     try:
+                        def abort() -> bool:
+                            return not ready() or not self._probe_access_allowed()
+
                         if target == "notepad":
-                            self.io.press_key("w")
+                            if not abort():
+                                self.io.press_key("w")
                         elif hasattr(self.io, "hold_keys"):
-                            self.io.hold_keys(("w",), 0.30, lambda: not ready())
+                            self.io.hold_keys(("w",), 0.30, abort)
                         else:
-                            self.io.hold_key("w", 0.30, lambda: not ready())
-                        if ready():
+                            self.io.hold_key("w", 0.30, abort)
+                        if not self._probe_access_allowed():
+                            self.probe_status = "subscription_required"
+                            self.probe_detail = "An active license is required for the input test"
+                        elif ready():
                             self.probe_status = "sent"
                             self.probe_detail = f"Windows accepted W input; check {target} visually"
                         else:
@@ -784,17 +831,15 @@ class Engine:
             self.state = "stopped"
             self.wait_reason = ""
             self.log("log.stopped")
-            if self._restart_pending:
-                # Wait for the old worker to *fully* exit before starting a new one.
-                old_thread = threading.current_thread()
-                threading.Thread(target=self._restart_after, args=(old_thread,),
-                                 name="engine-restart", daemon=True).start()
 
     def _restart_after(self, old_thread: threading.Thread) -> None:
-        old_thread.join(timeout=20)
-        if not old_thread.is_alive() and self._restart_pending:
+        old_thread.join()
+        with self._control_lock:
+            if self._thread is not old_thread or not self._restart_pending:
+                return
             self._restart_pending = False
-            self.start()
+            request = self._start_request = object()
+        self._initialize_start(request)
 
     def _record_replay_click(self, position: tuple[int, int], now: float, source: str) -> bool:
         """Click only the replay candidate, with a strict foreground re-check."""

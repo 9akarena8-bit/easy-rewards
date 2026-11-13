@@ -29,13 +29,19 @@ const tog = (k, on) => `<button type="button" class="tog ${on ? "on" : ""}" data
 function toast(m) { clearTimeout(toastT); document.querySelectorAll(".toast").forEach(e => e.remove());
   const d = document.createElement("div"); d.className = "toast"; d.textContent = m; document.body.append(d); toastT = setTimeout(() => d.remove(), 2200); }
 const cname = c => c.name || t(c.key);
-const languageButton = l => `<button class="${ST.cfg.ui_language === l ? "on" : ""}" data-ui="${l}" title="${esc(t("lang." + l))}">${({ru:"🇷🇺",en:"🇬🇧",uk:"🇺🇦"})[l]} <span>${esc(t("lang.short_" + l))}</span></button>`;
+const uiLanguageFlags = {ru:"🇷🇺",en:"🇬🇧",uk:"🇺🇦",fr:"🇫🇷",pl:"🇵🇱",ar:"🇸🇦"};
+const languageButton = (l, full = false) => `<button class="${ST.cfg.ui_language === l ? "on" : ""}" data-ui="${l}" title="${esc(t("lang." + l))}">${uiLanguageFlags[l]} <span>${esc(t(full ? "lang." + l : "lang.short_" + l))}</span></button>`;
 
 async function init() {
   document.body.classList.toggle("mini", MINI);
   ST = await api.state(); await loadStrings(); await tick(); setInterval(tick, 800);
 }
-async function loadStrings() { S = await api.strings(ST.cfg.ui_language); document.documentElement.lang = ST.cfg.ui_language; }
+async function loadStrings() {
+  const lang = ST.cfg.ui_language;
+  S = await api.strings(lang);
+  document.documentElement.lang = lang;
+  document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+}
 async function tick() {
   if (pollingInProgress) return;
   pollingInProgress = true;
@@ -157,7 +163,7 @@ function refreshLiveMetrics() {
 // Their confirmation remains visible even if the normal click event is lost.
 const CONTROL_ACTIONS = new Set(["start", "stop", "pause", "main", "focusgame", "ptest"]);
 let lastPointerControl = null;
-const controlUi = (ru, en, uk) => ({ru, en, uk})[ST?.cfg?.ui_language || "ru"] || ru;
+const controlUi = (ru, en, uk) => ({ru, en, uk})[ST?.cfg?.ui_language || "ru"] || en;
 async function runControlAction(action, target = "fortnite") {
   const name = action === "ptest" ? "TEST " + target : action.toUpperCase();
   toast(controlUi("Команда отправлена: ", "Command sent: ", "Команду надіслано: ") + name);
@@ -176,6 +182,8 @@ async function runControlAction(action, target = "fortnite") {
       const reason = result.reason || "unknown";
       toast(action === "focusgame" && S["afk.focus_" + reason]
         ? t("afk.focus_" + reason)
+        : reason === "subscription_required"
+          ? controlUi("Для запуска нужна действующая подписка", "An active subscription is required", "Для запуску потрібна чинна підписка")
         : reason === "return_to_game"
           ? controlUi("Вернись в Fortnite и нажми ", "Return to Fortnite and press ", "Повернися у Fortnite та натисни ") + resumeKey()
         : reason === "epic_launcher_unavailable"
@@ -220,7 +228,7 @@ function render(force) {
   const stablePage = !MINI && (page === "home" || page === "afk" || page === "subscriptions" || page === "support" || page === "settings");
   const staticSignature = JSON.stringify([page, flt, ST.cfg.ui_language, ST.cfg.theme,
     ST.cfg, ST.tracker.rev, ST.week, ST.guide, ST.tpl_counts, ST.update,
-    ST.release_news, ST.subscription, ST.license_status, ST.payment_hub, ST.support_contacts,
+    ST.release_news, ST.subscription, ST.license_status, ST.merchant, ST.offline_access, ST.payment_hub, ST.support_contacts,
     ST.discord_notifications, tplList.length, Boolean(shot), testRes]);
   const sameRenderedPage = document.querySelector('#app [data-current-page]')?.dataset.currentPage === page;
   if (!force && stablePage && sameRenderedPage && staticSignature === stableViewSignature) {
@@ -243,7 +251,7 @@ function render(force) {
     ${PAGES.map(p => `<button class="nav ${page === p[0] ? "on" : ""}" data-page="${p[0]}"><i>${p[1]}</i><span>${t(p[2])}</span></button>`).join("")}
     <div class="ver">v${esc(ST.version)}</div></aside>
   <section class="main"><header class="top"><div class="top-label">EASY REWARDS</div><h1>${t(tit.replace("nav.", "") === "home" ? "home.title" : tit)}</h1>${wk}
-    <div class="seg">${["ru", "en", "uk"].map(languageButton).join("")}</div>
+    <div class="seg">${Object.keys(uiLanguageFlags).map(l => languageButton(l)).join("")}</div>
     <button class="icon" data-act="theme" title="${t("set.theme")}">${ST.cfg.theme === "dark" ? "☀" : "☾"}</button>
     <button class="icon" data-act="mini" title="${t("mini.open")}">⧉</button></header>
     ${["available", "downloading", "ready"].includes(ST.update.status) && hiddenUpdateVersion !== ST.update.version ? `<div class="update-banner">
@@ -421,7 +429,7 @@ const PAGE = {
     const c = ST.cfg, f = (l, inner) => `<div class="field"><span>${l}</span>${inner}</div>`;
     const sl = (k, lo, hi, st, v) => `<div class="row"><input type="range" data-cfg="${k}" min="${lo}" max="${hi}" step="${st}" value="${v}"><b data-out="${k}">${v}</b></div>`;
     return `<div class="grid g2"><div class="card"><h3>${t("set.general")}</h3>
-      ${f(t("set.ui_language"), `<div class="seg lang-full">${["ru", "en", "uk"].map(l => `<button class="${c.ui_language === l ? "on" : ""}" data-ui="${l}">${({ru:"🇷🇺",en:"🇬🇧",uk:"🇺🇦"})[l]} ${esc(t("lang." + l))}</button>`).join("")}</div>`)}
+      ${f(t("set.ui_language"), `<div class="seg lang-full">${Object.keys(uiLanguageFlags).map(l => languageButton(l, true)).join("")}</div>`)}
       ${f(t("set.theme"), `<div class="seg">${["light", "dark"].map(l => `<button class="${c.theme === l ? "on" : ""}" data-theme="${l}">${t("theme." + l)}</button>`).join("")}</div>`)}
       ${f(t("set.game_language"), `<select data-cfg="language">${["ru", "en", "uk"].map(l => `<option value="${l}" ${c.language === l ? "selected" : ""}>${esc(t("lang." + l))}</option>`).join("")}</select>`)}
       <details class="launcher-advanced"><summary>${t("set.season")}</summary><h3>${t("set.season")}</h3>${f(t("set.week_start"), `<input type="datetime-local" id="wk" value="${ST.tracker.week_start}">`)}<div class="mute">${t("set.week_hint")}</div></details>
@@ -446,24 +454,24 @@ const PAGE = {
     return `<div class="card" style="max-width:640px"><p class="mute" style="margin-top:0">${t("upd.subtitle")}</p><p>${t("upd.version", {v: ST.version})}</p>
       ${ST.release_mode ? `<p class="update-channel">GitHub Releases · 9akarena8-bit/easy-rewards</p>` : `<input class="in" id="uurl" type="url" placeholder="https://…/version.json" value="${esc(ST.cfg.update_url)}">`}
       <div class="field"><span>${t("upd.auto")}</span>${tog("auto_update", ST.cfg.auto_update)}</div>
-      <div class="row"><button class="btn pri" data-act="ucheck" ${u.status === "downloading" ? "disabled" : ""}>${t("upd.check")}</button>${["available", "ready"].includes(u.status) ? `<button class="btn" data-act="uinst">${t("upd.exit_install")}</button>` : ""}</div>
+      <div class="row"><button class="btn pri" data-act="ucheck" ${["checking", "downloading"].includes(u.status) ? "disabled" : ""}>${t("upd.check")}</button>${["available", "ready"].includes(u.status) ? `<button class="btn" data-act="uinst">${t("upd.exit_install")}</button>` : ""}</div>
       <p>${esc(msg)}</p><div class="warnbox">${t("upd.warn")}</div></div>`;
   },
   subscriptions() {
-    const sub = ST.subscription || {plans:[], payment_methods:[], enabled:false};
-    const labels = {demo:"subs.demo", day:"subs.day", three_days:"subs.three_days", week:"subs.week"};
-    return `<p class="mute" style="margin:0 0 14px">${t("subs.intro")}</p>
-    <div class="card" style="margin-bottom:16px"><div class="row" style="justify-content:space-between;align-items:center">
-      <h3 style="margin:0">${t("subs.status_title")}</h3><span class="badge">${t("subs.not_active")}</span></div>
-      <div class="sub-remaining">—</div><p class="mute">${t("subs.remain_text")}</p>
-      <p class="mute">${t("subs.notice_text")}</p></div>
-    <h3>${t("subs.plans_title")}</h3>
-    <div class="grid g2 subs-grid">${(sub.plans || []).filter(p => p.id !== "demo").map(p => `<div class="card">
-      <h3>${t(labels[p.id] || "subs.demo")}</h3>
-      <p class="mute">${p.id === "demo" ? t("subs.demo_note") : t("subs.access_note")}</p>
-      <div class="row" style="justify-content:space-between"><b>${t("subs.price_unset")}</b>
-      <button type="button" class="btn sm" data-plan="${esc(p.id)}">${controlUi("Выбрать", "Select", "Вибрати")}</button></div></div>`).join("")}</div>
-    ${paymentHubMarkup()}${licensePreviewMarkup()}`;
+    const access = ST.offline_access || {};
+    return `<section class="subscription-banner"><h2>♛ ${esc(t("nav.subscriptions"))}</h2><p>${localText("subtitle")}</p></section>
+    <div class="subscription-plans">${subscriptionPlans.map(([id,label,price])=>`<article class="card subscription-plan ${id}">${id === "week" ? `<span class="plan-value-badge">${localText("best")}</span>` : ""}<h3>${localText(label)}</h3><strong>${price} ₽</strong><p>✓ ${localText("program")}</p><p>✓ ${localText("settings")}</p><p>✓ ${localText("updates")}</p><button class="btn pri" data-merchant="select" data-plan="${id}">${localText("choose")}</button></article>`).join("")}</div>
+    <section class="card referral-banner"><div><h3>${localText("friendTitle")}</h3><p>${localText("friendHelp")}</p></div><button class="btn pri" data-merchant="referral">${localText("invite")}</button></section>
+    <section class="card merchant-account" id="merchant-access"><h3>${localText("access")} · ${localText(access.active ? "active" : "inactive")}</h3>
+    ${access.active ? `<p>${access.expires_at == null ? localText("forever") : localText("until") + " " + esc(new Date(access.expires_at * 1000).toLocaleString(ST.cfg.ui_language))} · ${localText(access.access === "owner" ? "owner" : access.access === "friend" ? "friend" : "paid")}</p>` : ""}
+    ${access.owner_test ? `<p class="mute">${localText("ownerTest")}</p>` : ""}
+    <p>${localText("accessHelp")}</p>
+    <div class="row"><input class="in" readonly id="installation-id" value="${esc(access.installation_id || "")}" aria-label="${localText("installation")}"><button class="btn" data-merchant="copy-installation">${localText("copyCode")}</button></div>
+    <label for="offline-license">${localText("licenseLabel")}</label><textarea class="in" id="offline-license" rows="3" maxlength="16384" placeholder="${localText("placeholder")}"></textarea>
+    <div class="row"><button class="btn" data-merchant="pick-file">${localText("chooseFile")}</button>
+      <input type="file" id="offline-license-file" accept=".json,application/json" hidden>
+      <button class="btn pri" data-merchant="activate">${localText("activate")}</button></div>
+    ${access.configured ? "" : `<p class="mute">${localText("publicKey")}</p>`}</section>`;
   },
   notifications() {
     const discord = ST.discord_notifications || {};
@@ -473,6 +481,7 @@ const PAGE = {
         <p class="mute">${discord.configured ? t("discord.configured") : t("discord.unconfigured")}</p>
         <label class="field" style="display:block">
           <span>${t("discord.webhook")}</span>
+          <small class="mute webhook-help">${t("discord.webhook_help")}</small>
           <input class="in" id="discord-webhook" type="password" autocomplete="off"
                  placeholder="https://discord.com/api/webhooks/..." style="width:100%">
         </label>
@@ -494,38 +503,38 @@ const PAGE = {
   support() {
     const links = ST.support_contacts || {};
     return `<div class="grid g2" style="align-items:start">
-      <section class="card"><h3>${t("support.title")}</h3>
-        <p class="mute">${t("support.intro")}</p>
+      <section class="card"><h3>${localText("supportTitle")}</h3>
+        <p class="mute">${localText("supportIntro")}</p>
         <div class="row" style="margin-top:14px">
-          <button class="btn pri" data-act="support_report">${t("support.create_report")}</button>
+          <button class="btn pri" data-act="support_report">${localText("createReport")}</button>
         </div>
         <div class="focus-line"><span>Fortnite</span><b data-live="launcher-game-status">${esc(launcherGameStatus())}</b></div>
-        <div class="focus-line"><span>${controlUi("Лаунчер", "Launcher", "Лаунчер")}</span><b data-live="launcher-engine-status">${esc(launcherEngineStatus())}</b></div>
-        <div class="focus-line"><span>${controlUi("Версия", "Version", "Версія")}</span><b>v${esc(ST.version)}</b></div>
-        <h3>${controlUi("Связаться", "Contact", "Зв’язатися")}</h3>
+        <div class="focus-line"><span>${localText("launcher")}</span><b data-live="launcher-engine-status">${esc(launcherEngineStatus())}</b></div>
+        <div class="focus-line"><span>${localText("version")}</span><b>v${esc(ST.version)}</b></div>
+        <h3>${localText("contact")}</h3>
         <div class="row">
           ${[["telegram", "Telegram"], ["discord", "Discord"], ["github", t("support.github")]].filter(([channel]) => links[channel]).map(([channel, label]) =>
             `<button class="btn" data-act="support_open" data-channel="${channel}">${esc(label)}</button>`).join("")}
         </div>
-        <p class="mute">${t("support.privacy")}</p>
+        <p class="mute">${localText("privacy")}</p>
       </section>
-      <section class="card"><h3>${t("support.report")}</h3>
-        ${supportReport?.ok ? `<p class="mute">${t("support.saved")}: ${esc(supportReport.path)}</p>
-          <textarea id="support-preview" class="in" aria-label="${esc(t("support.report"))}" rows="12" readonly style="width:100%;min-height:220px;resize:vertical">${esc(supportReport.text)}</textarea>
-          <div class="row" style="margin-top:10px"><button class="btn pri" data-act="support_copy">${t("support.copy")}</button></div>`
-        : `<p class="mute">${t("support.empty")}</p>`}
+      <section class="card"><h3>${localText("report")}</h3>
+        ${supportReport?.ok ? `<p class="mute">${localText("saved")}: ${esc(supportReport.path)}</p>
+          <textarea id="support-preview" class="in" aria-label="${esc(localText("report"))}" rows="12" readonly style="width:100%;min-height:220px;resize:vertical">${esc(supportReport.text)}</textarea>
+          <div class="row" style="margin-top:10px"><button class="btn pri" data-act="support_copy">${localText("copyReport")}</button></div>`
+        : `<p class="mute">${localText("empty")}</p>`}
       </section>
       <section class="card launcher-faq">
-        <h3>${controlUi("Частые вопросы", "Frequently asked questions", "Поширені запитання")}</h3>
-        <details><summary>${controlUi("Почему Fortnite не найден?", "Why can’t the launcher find Fortnite?", "Чому Fortnite не знайдено?")}</summary>
-          <p>${controlUi("Открой Fortnite через Epic Games Launcher и дождись появления окна игры.", "Open Fortnite through Epic Games Launcher and wait for the game window.", "Відкрий Fortnite через Epic Games Launcher і дочекайся появи вікна гри.")}</p></details>
-        <details><summary>${controlUi("Что делать после Alt+Tab?", "What do I do after Alt+Tab?", "Що робити після Alt+Tab?")}</summary>
-          <p>${controlUi("Вернись в Fortnite и нажми клавишу продолжения из настроек.", "Return to Fortnite and press the resume key shown in Settings.", "Повернися до Fortnite й натисни клавішу продовження з налаштувань.")}</p></details>
-        <details><summary>${controlUi("Где проверить обновления?", "Where do I check for updates?", "Де перевірити оновлення?")}</summary>
-          <button class="btn sm" data-page="updates">${controlUi("Открыть новости", "Open News", "Відкрити новини")}</button></details>
-        <details><summary>${controlUi("Как оформить подписку?", "How do I subscribe?", "Як оформити підписку?")}</summary>
-          <p>${controlUi("В разделе «Подписка» можно выбрать тариф и сохранить локальный черновик. Оплата в этой сборке отключена.", "Choose a plan and save a local draft under Subscription. Payments are disabled in this build.", "У розділі «Підписка» можна вибрати тариф і зберегти локальну чернетку. Оплату в цій збірці вимкнено.")}</p>
-          <button class="btn sm" data-page="subscriptions">${controlUi("Открыть подписку", "Open Subscription", "Відкрити підписку")}</button></details>
+        <h3>${localText("faq")}</h3>
+        <details><summary>${localText("findQ")}</summary>
+          <p>${localText("findA")}</p></details>
+        <details><summary>${localText("resumeQ")}</summary>
+          <p>${localText("resumeA")}</p></details>
+        <details><summary>${localText("updateQ")}</summary>
+          <button class="btn sm" data-page="updates">${localText("news")}</button></details>
+        <details><summary>${localText("subscribeQ")}</summary>
+          <p>${localText("subscribeA")}</p>
+          <button class="btn sm" data-page="subscriptions">${localText("subscribe")}</button></details>
       </section>
       </div>`;
   },
@@ -640,13 +649,225 @@ function bindShot() {
   if (box) { draw([box.fx, box.fy], [box.fx + box.fw, box.fy + box.fh]); }
 }
 
+const localMessages = {
+  licenseKey: ["Укажите лицензионный ключ", "Enter a license key", "Введіть ліцензійний ключ", "Saisissez une clé de licence", "Wprowadź klucz licencji", "أدخل مفتاح الترخيص"],
+  verified: ["Сервер подтвердил ключ (тест)", "Server verified the key (test)", "Сервер підтвердив ключ (тест)", "Clé vérifiée par le serveur (test)", "Serwer potwierdził klucz (test)", "تحقق الخادم من المفتاح (اختبار)"],
+  licenseError: ["Ошибка проверки лицензии", "License verification failed", "Помилка перевірки ліцензії", "Échec de la vérification de la licence", "Nie udało się zweryfikować licencji", "تعذر التحقق من الترخيص"],
+  windowFailed: ["Не удалось управлять окном", "Could not control the window", "Не вдалося керувати вікном", "Impossible de contrôler la fenêtre", "Nie udało się sterować oknem", "تعذر التحكم في النافذة"],
+  contact: ["Связаться", "Contact", "Зв’язатися", "Contact", "Kontakt", "التواصل"],
+  faq: ["Частые вопросы", "Frequently asked questions", "Поширені запитання", "Questions fréquentes", "Często zadawane pytania", "الأسئلة الشائعة"],
+  findQ: ["Почему Fortnite не найден?", "Why can’t the launcher find Fortnite?", "Чому Fortnite не знайдено?", "Pourquoi Fortnite est-il introuvable ?", "Dlaczego program nie wykrywa Fortnite?", "لماذا لم يتم العثور على Fortnite؟"],
+  findA: ["Откройте Fortnite через Epic Games Launcher и дождитесь окна игры.", "Open Fortnite through Epic Games Launcher and wait for the game window.", "Відкрийте Fortnite через Epic Games Launcher і дочекайтеся вікна гри.", "Lancez Fortnite depuis Epic Games Launcher et attendez l’ouverture du jeu.", "Uruchom Fortnite przez Epic Games Launcher i poczekaj na okno gry.", "افتح Fortnite عبر Epic Games Launcher وانتظر ظهور نافذة اللعبة."],
+  resumeQ: ["Что делать после Alt+Tab?", "What do I do after Alt+Tab?", "Що робити після Alt+Tab?", "Que faire après Alt+Tab ?", "Co zrobić po Alt+Tab?", "ماذا أفعل بعد Alt+Tab؟"],
+  resumeA: ["Вернитесь в Fortnite и нажмите клавишу продолжения из настроек.", "Return to Fortnite and press the resume key shown in Settings.", "Поверніться до Fortnite й натисніть клавішу продовження з налаштувань.", "Revenez dans Fortnite et appuyez sur la touche de reprise indiquée dans les paramètres.", "Wróć do Fortnite i naciśnij klawisz wznowienia podany w ustawieniach.", "عُد إلى Fortnite واضغط مفتاح الاستئناف الموضح في الإعدادات."],
+  updateQ: ["Где проверить обновления?", "Where do I check for updates?", "Де перевірити оновлення?", "Où vérifier les mises à jour ?", "Gdzie sprawdzić aktualizacje?", "أين أتحقق من التحديثات؟"],
+  news: ["Открыть новости", "Open News", "Відкрити новини", "Ouvrir les actualités", "Otwórz aktualności", "فتح الأخبار"],
+  subscribeQ: ["Как оформить подписку?", "How do I subscribe?", "Як оформити підписку?", "Comment m’abonner ?", "Jak wykupić subskrypcję?", "كيف أشترك؟"],
+  subscribeA: ["Выберите срок и способ оплаты, затем отправьте заявку владельцу. Он выдаст файл доступа после проверки перевода или обмена Steam.", "Choose a term and payment method, then send the request to the owner. They issue the access file after checking the transfer or Steam trade.", "Оберіть строк і спосіб оплати, потім надішліть заявку власнику. Він видасть файл доступу після перевірки переказу або обміну Steam.", "Choisissez la durée et le mode de paiement, puis envoyez la demande au propriétaire. Il fournit le fichier d’accès après vérification du virement ou de l’échange Steam.", "Wybierz okres i metodę płatności, a następnie wyślij zgłoszenie właścicielowi. Wyda plik dostępu po sprawdzeniu przelewu lub wymiany Steam.", "اختر المدة وطريقة الدفع، ثم أرسل الطلب إلى المالك. يصدر ملف الوصول بعد التحقق من التحويل أو التبادل على Steam."],
+  subscribe: ["Открыть подписку", "Open Subscription", "Відкрити підписку", "Ouvrir l’abonnement", "Otwórz subskrypcję", "فتح الاشتراك"],
+  launcher: ["Лаунчер", "Launcher", "Лаунчер", "Lanceur", "Program uruchamiający", "المشغّل"],
+  version: ["Версия", "Version", "Версія", "Version", "Wersja", "الإصدار"],
+  clearDiscord: ["Удалить сохранённый вебхук Discord?", "Remove the saved Discord webhook?", "Видалити збережений вебхук Discord?", "Supprimer le webhook Discord enregistré ?", "Usunąć zapisany webhook Discord?", "حذف رابط Discord webhook المحفوظ؟"],
+  deleteCounter: ["Удалить этот счётчик?", "Delete this counter?", "Видалити цей лічильник?", "Supprimer ce compteur ?", "Usunąć ten licznik?", "حذف هذا العداد؟"],
+  resetTracker: ["Сбросить данные трекера?", "Reset tracker data?", "Скинути дані трекера?", "Réinitialiser les données de suivi ?", "Zresetować dane śledzenia?", "إعادة ضبط بيانات التتبع؟"],
+  supportTitle: ["Поддержка", "Support", "Підтримка", "Assistance", "Pomoc", "الدعم"],
+  supportIntro: ["Проверьте состояние лаунчера и при необходимости создайте отчёт.", "Check launcher status and create a report if needed.", "Перевірте стан лаунчера та за потреби створіть звіт.", "Vérifiez l’état du lanceur et créez un rapport si nécessaire.", "Sprawdź stan programu i w razie potrzeby utwórz raport.", "تحقق من حالة المشغّل وأنشئ تقريرًا عند الحاجة."],
+  createReport: ["Создать отчёт", "Create report", "Створити звіт", "Créer un rapport", "Utwórz raport", "إنشاء تقرير"],
+  privacy: ["Отчёт сохраняется локально. Проверьте его перед отправкой.", "The report is saved locally. Review it before sharing.", "Звіт зберігається локально. Перевірте його перед надсиланням.", "Le rapport est enregistré localement. Relisez-le avant de le partager.", "Raport jest zapisywany lokalnie. Sprawdź go przed udostępnieniem.", "يُحفظ التقرير محليًا. راجعه قبل مشاركته."],
+  report: ["Отчёт поддержки", "Support report", "Звіт підтримки", "Rapport d’assistance", "Raport dla pomocy technicznej", "تقرير الدعم"],
+  saved: ["Сохранён", "Saved", "Збережено", "Enregistré", "Zapisano", "تم الحفظ"],
+  copyReport: ["Скопировать отчёт", "Copy report", "Скопіювати звіт", "Copier le rapport", "Kopiuj raport", "نسخ التقرير"],
+  empty: ["Отчёт ещё не создан.", "No report yet.", "Звіт ще не створено.", "Aucun rapport pour le moment.", "Nie utworzono jeszcze raportu.", "لم يُنشأ تقرير بعد."],
+  supportFailed: ["Не удалось выполнить действие", "Could not complete the action", "Не вдалося виконати дію", "Impossible de terminer l’action", "Nie udało się wykonać działania", "تعذر إتمام الإجراء"],
+  subtitle: ["Полный доступ к Fortnite Pirate Token", "Full access to Fortnite Pirate Token", "Повний доступ до Fortnite Pirate Token", "Accès complet à Fortnite Pirate Token", "Pełny dostęp do Fortnite Pirate Token", "وصول كامل إلى Fortnite Pirate Token"],
+  best: ["Лучшая цена за день", "Best price per day", "Найкраща ціна за день", "Meilleur prix par jour", "Najlepsza cena za dzień", "أفضل سعر يومي"],
+  day: ["1 день", "1 day", "1 день", "1 jour", "1 dzień", "يوم واحد"],
+  three: ["3 дня", "3 days", "3 дні", "3 jours", "3 dni", "٣ أيام"],
+  week: ["7 дней", "7 days", "7 днів", "7 jours", "7 dni", "٧ أيام"],
+  program: ["Доступ к программе", "App access", "Доступ до застосунку", "Accès à l’application", "Dostęp do aplikacji", "الوصول إلى التطبيق"],
+  settings: ["Все настройки запуска", "All launch settings", "Усі налаштування запуску", "Tous les réglages de lancement", "Wszystkie ustawienia uruchamiania", "جميع إعدادات التشغيل"],
+  updates: ["Обновления приложения", "App updates", "Оновлення застосунку", "Mises à jour de l’application", "Aktualizacje aplikacji", "تحديثات التطبيق"],
+  choose: ["Выбрать", "Choose", "Вибрати", "Choisir", "Wybierz", "اختر"],
+  friendTitle: ["Бесплатный доступ для друзей", "Free access for friends", "Безкоштовний доступ для друзів", "Accès gratuit pour les amis", "Bezpłatny dostęp dla znajomych", "وصول مجاني للأصدقاء"],
+  friendHelp: ["Попросите друга установить приложение и прислать владельцу код установки. Владелец выдаст бесплатный файл доступа.", "Ask your friend to install the app and send their installation code to the owner for a free access file.", "Попросіть друга встановити застосунок і надіслати власнику код встановлення, щоб отримати безкоштовний файл доступу.", "Demandez à votre ami d’installer l’application et d’envoyer son code d’installation au propriétaire pour recevoir un fichier d’accès gratuit.", "Poproś znajomego o instalację aplikacji i wysłanie kodu instalacji właścicielowi, który wyda bezpłatny plik dostępu.", "اطلب من صديقك تثبيت التطبيق وإرسال رمز التثبيت إلى المالك ليحصل على ملف وصول مجاني."],
+  invite: ["Как пригласить", "How to invite", "Як запросити", "Comment inviter", "Jak zaprosić", "كيفية الدعوة"],
+  access: ["Ваш доступ", "Your access", "Ваш доступ", "Votre accès", "Twój dostęp", "وصولك"],
+  active: ["активен", "active", "активний", "actif", "aktywny", "نشط"],
+  inactive: ["не активирован", "inactive", "не активовано", "inactif", "nieaktywny", "غير نشط"],
+  forever: ["Бессрочно", "No expiration", "Безстроково", "Sans expiration", "Bezterminowo", "بلا انتهاء"],
+  until: ["До", "Until", "До", "Jusqu’au", "Do", "حتى"],
+  owner: ["Лицензия владельца", "Owner license", "Ліцензія власника", "Licence du propriétaire", "Licencja właściciela", "ترخيص المالك"],
+  friend: ["Бесплатный доступ друга", "Free friend access", "Безкоштовний доступ друга", "Accès gratuit pour un ami", "Bezpłatny dostęp znajomego", "وصول مجاني لصديق"],
+  paid: ["Оплаченная подписка", "Paid subscription", "Оплачена підписка", "Abonnement payé", "Opłacona subskrypcja", "اشتراك مدفوع"],
+  ownerTest: ["Сборка для проверки владельцем. Запуск доступен в тестовом режиме.", "Owner test build. Launch is available in test mode.", "Збірка для перевірки власником. Запуск доступний у тестовому режимі.", "Version de test du propriétaire. Lancement possible en mode test.", "Wersja testowa właściciela. Uruchamianie dostępne w trybie testowym.", "إصدار اختبار للمالك. يمكن التشغيل في وضع الاختبار."],
+  accessHelp: ["Отправьте владельцу код установки. Он выдаст файл доступа после проверки оплаты или бесплатно для друзей.", "Send your installation code to the owner. They issue the access file after verifying payment or for free for friends.", "Надішліть власнику код встановлення. Він видасть файл доступу після перевірки оплати або безкоштовно для друзів.", "Envoyez votre code d’installation au propriétaire. Il fournit le fichier d’accès après vérification du paiement ou gratuitement aux amis.", "Wyślij kod instalacji właścicielowi. Wyda plik dostępu po sprawdzeniu płatności lub bezpłatnie znajomym.", "أرسل رمز التثبيت إلى المالك. يصدر ملف الوصول بعد التحقق من الدفع، أو مجانًا للأصدقاء."],
+  installation: ["Код установки", "Installation code", "Код встановлення", "Code d’installation", "Kod instalacji", "رمز التثبيت"],
+  copyCode: ["Копировать код", "Copy code", "Копіювати код", "Copier le code", "Kopiuj kod", "نسخ الرمز"],
+  licenseLabel: ["Код доступа или содержимое JSON-файла от владельца", "Access code or contents of the owner’s JSON file", "Код доступу або вміст JSON-файлу від власника", "Code d’accès ou contenu du fichier JSON du propriétaire", "Kod dostępu lub zawartość pliku JSON od właściciela", "رمز الوصول أو محتوى ملف JSON من المالك"],
+  placeholder: ["FPT2.… или содержимое JSON", "FPT2.… or JSON contents", "FPT2.… або вміст JSON", "FPT2.… ou contenu JSON", "FPT2.… lub zawartość JSON", "FPT2.… أو محتوى JSON"],
+  chooseFile: ["Выбрать JSON-файл", "Choose JSON file", "Вибрати JSON-файл", "Choisir un fichier JSON", "Wybierz plik JSON", "اختر ملف JSON"],
+  activate: ["Активировать доступ", "Activate access", "Активувати доступ", "Activer l’accès", "Aktywuj dostęp", "تفعيل الوصول"],
+  publicKey: ["Для активации нужен публичный ключ. Обратитесь к владельцу.", "Activation requires a public key. Contact the owner.", "Для активації потрібен публічний ключ. Зверніться до власника.", "L’activation nécessite une clé publique. Contactez le propriétaire.", "Aktywacja wymaga klucza publicznego. Skontaktuj się z właścicielem.", "يتطلب التفعيل مفتاحًا عامًا. تواصل مع المالك."],
+  bank: ["Перевод (СБП / карта)", "Bank transfer (SBP / card)", "Переказ (СБП / картка)", "Virement (SBP / carte)", "Przelew (SBP / karta)", "تحويل مصرفي (SBP / بطاقة)"],
+  bankHelp: ["Запросите реквизиты перевода у владельца.", "Ask the owner for transfer details.", "Запитайте реквізити переказу у власника.", "Demandez les coordonnées de paiement au propriétaire.", "Poproś właściciela o dane do przelewu.", "اطلب تفاصيل التحويل من المالك."],
+  steam: ["Оплата скинами", "Pay with skins", "Оплата скінами", "Paiement en skins", "Płatność skinami", "الدفع بعناصر المظهر"],
+  steamHelp: ["Согласуйте предметы и условия Steam-обмена с владельцем.", "Agree on the Steam items and trade terms with the owner.", "Узгодьте предмети та умови обміну Steam із власником.", "Convenez avec le propriétaire des objets et des conditions de l’échange Steam.", "Uzgodnij z właścicielem przedmioty i warunki wymiany na Steam.", "اتفق مع المالك على عناصر Steam وشروط التبادل."],
+  close: ["Закрыть", "Close", "Закрити", "Fermer", "Zamknij", "إغلاق"],
+  checkout: ["Оформление подписки", "Subscription request", "Оформлення підписки", "Demande d’abonnement", "Zgłoszenie subskrypcji", "طلب اشتراك"],
+  method: ["Способ оплаты", "Payment method", "Спосіб оплати", "Mode de paiement", "Metoda płatności", "طريقة الدفع"],
+  manual: ["Согласуйте перевод или Steam-обмен с владельцем. Он выдаст доступ после проверки оплаты или обмена.", "Arrange the transfer or Steam trade with the owner. They issue access after verifying payment or trade.", "Узгодьте переказ або обмін Steam із власником. Він надасть доступ після перевірки оплати чи обміну.", "Organisez le virement ou l’échange Steam avec le propriétaire. Il accorde l’accès après vérification.", "Uzgodnij przelew lub wymianę Steam z właścicielem. Dostęp uzyskasz po weryfikacji płatności lub wymiany.", "نسّق التحويل أو التبادل على Steam مع المالك. يمنحك الوصول بعد التحقق."],
+  copyOrder: ["Скопировать заявку", "Copy request", "Скопіювати заявку", "Copier la demande", "Kopiuj zgłoszenie", "نسخ الطلب"],
+  contactOwner: ["Связаться с владельцем", "Contact the owner", "Зв’язатися з власником", "Contacter le propriétaire", "Skontaktuj się z właścicielem", "التواصل مع المالك"],
+  codeMissing: ["Код установки недоступен", "Installation code unavailable", "Код встановлення недоступний", "Code d’installation indisponible", "Kod instalacji niedostępny", "رمز التثبيت غير متاح"],
+  codeCopied: ["Код установки скопирован", "Installation code copied", "Код встановлення скопійовано", "Code d’installation copié", "Kod instalacji skopiowany", "تم نسخ رمز التثبيت"],
+  selected: ["Код выделен. Нажмите Ctrl+C.", "Code selected. Press Ctrl+C.", "Код виділено. Натисніть Ctrl+C.", "Code sélectionné. Appuyez sur Ctrl+C.", "Kod zaznaczony. Naciśnij Ctrl+C.", "تم تحديد الرمز. اضغط Ctrl+C."],
+  requestFailed: ["Не удалось сформировать заявку", "Could not create the request", "Не вдалося сформувати заявку", "Impossible de créer la demande", "Nie udało się utworzyć zgłoszenia", "تعذر إنشاء الطلب"],
+  plan: ["Тариф", "Plan", "Тариф", "Offre", "Plan", "الخطة"],
+  unverified: ["Оплата ещё не подтверждена.", "Payment is pending verification.", "Оплату ще не підтверджено.", "Paiement en attente de vérification.", "Płatność oczekuje na weryfikację.", "الدفع بانتظار التحقق."],
+  requestCopied: ["Заявка скопирована. Отправьте её владельцу.", "Request copied. Send it to the owner.", "Заявку скопійовано. Надішліть її власнику.", "Demande copiée. Envoyez-la au propriétaire.", "Zgłoszenie skopiowane. Wyślij je właścicielowi.", "تم نسخ الطلب. أرسله إلى المالك."],
+  requestCopyFailed: ["Не удалось скопировать заявку. Скопируйте код установки отдельно.", "Could not copy the request. Copy the installation code separately.", "Не вдалося скопіювати заявку. Скопіюйте код встановлення окремо.", "Impossible de copier la demande. Copiez le code d’installation séparément.", "Nie udało się skopiować zgłoszenia. Skopiuj sam kod instalacji.", "تعذر نسخ الطلب. انسخ رمز التثبيت بشكل منفصل."],
+  licenseMissing: ["Выберите файл или вставьте код доступа", "Choose a file or paste an access code", "Виберіть файл або вставте код доступу", "Choisissez un fichier ou collez un code d’accès", "Wybierz plik lub wklej kod dostępu", "اختر ملفًا أو ألصق رمز الوصول"],
+  invalidLicense: ["Лицензия недействительна или срок истёк", "The license is invalid or expired", "Ліцензія недійсна або строк минув", "Licence invalide ou expirée", "Licencja jest nieważna lub wygasła", "الترخيص غير صالح أو منتهي"],
+  activated: ["Доступ активирован", "Access activated", "Доступ активовано", "Accès activé", "Dostęp aktywowany", "تم تفعيل الوصول"],
+  activationFailed: ["Не удалось активировать доступ", "Could not activate access", "Не вдалося активувати доступ", "Impossible d’activer l’accès", "Nie udało się aktywować dostępu", "تعذر تفعيل الوصول"],
+  largeFile: ["Файл лицензии слишком большой", "License file is too large", "Файл ліцензії завеликий", "Le fichier de licence est trop volumineux", "Plik licencji jest za duży", "ملف الترخيص كبير جدًا"],
+  readFailed: ["Не удалось прочитать файл лицензии", "Could not read the license file", "Не вдалося прочитати файл ліцензії", "Impossible de lire le fichier de licence", "Nie udało się odczytać pliku licencji", "تعذرت قراءة ملف الترخيص"],
+  copyFallback: ["Текст выделен. Нажмите Ctrl+C.", "Text selected. Press Ctrl+C.", "Текст виділено. Натисніть Ctrl+C.", "Texte sélectionné. Appuyez sur Ctrl+C.", "Tekst zaznaczony. Naciśnij Ctrl+C.", "تم تحديد النص. اضغط Ctrl+C."],
+  reportCopied: ["Отчёт скопирован", "Report copied", "Звіт скопійовано", "Rapport copié", "Raport skopiowany", "تم نسخ التقرير"],
+};
+const localLanguages = ["ru", "en", "uk", "fr", "pl", "ar"];
+function localText(key) {
+  const variants = localMessages[key];
+  return variants[localLanguages.indexOf(ST?.cfg?.ui_language)] ?? variants[1];
+}
+
+const subscriptionPlans = [["day", "day", 59], ["three_days", "three", 129], ["week", "week", 249]];
+const manualPaymentMethods = {
+  bank_transfer: ["bank", "bankHelp"],
+  steam_items: ["steam", "steamHelp"],
+};
+function openManualCheckout(planId) {
+  const plan = subscriptionPlans.find(([id]) => id === planId);
+  if (!plan) return;
+  const dialog = document.createElement("dialog");
+  dialog.className = "manual-checkout";
+  dialog.dataset.plan = planId;
+  dialog.setAttribute("aria-labelledby", "manual-checkout-title");
+  dialog.innerHTML = `<form method="dialog"><button class="btn sm" aria-label="${localText("close")}">×</button></form>
+    <h2 id="manual-checkout-title">${localText("checkout")}</h2>
+    <p class="manual-plan"><b>${localText(plan[1])}</b><strong>${plan[2]} ₽</strong></p>
+    <fieldset><legend>${localText("method")}</legend>
+      ${Object.entries(manualPaymentMethods).map(([id, [label]], index) => `<label>
+        <input type="radio" name="manual-method" value="${id}" ${index === 0 ? "checked" : ""}> ${localText(label)}</label>`).join("")}
+    </fieldset>
+    <p class="manual-payment-note" role="status"></p>
+    <p>${localText("manual")}</p>
+    <div class="row"><button class="btn pri" data-merchant="copy-order">${localText("copyOrder")}</button>
+      <button class="btn" data-merchant="checkout-support">${localText("contactOwner")}</button></div>`;
+  function showInstructions() {
+    const method = dialog.querySelector('input[name="manual-method"]:checked').value;
+    dialog.querySelector(".manual-payment-note").textContent = localText(manualPaymentMethods[method][1]);
+  }
+  showInstructions();
+  dialog.addEventListener("change", showInstructions);
+  dialog.addEventListener("click", event => {
+    if (event.target !== dialog) return;
+    const bounds = dialog.getBoundingClientRect();
+    if (event.clientX < bounds.left || event.clientX > bounds.right ||
+        event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
+  });
+  dialog.addEventListener("close", () => dialog.remove(), {once: true});
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
+async function copyInstallation() {
+  const id = ST.offline_access?.installation_id;
+  if (!id) return toast(localText("codeMissing"));
+  try {
+    await navigator.clipboard.writeText(id);
+    toast(localText("codeCopied"));
+  } catch {
+    document.querySelector(".manual-checkout[open]")?.close();
+    const input = $("#installation-id");
+    input?.focus();
+    input?.select();
+    toast(localText("selected"));
+  }
+}
+
+document.addEventListener("click", async ev => {
+  const button = ev.target.closest("[data-merchant]");
+  if (!button || button.disabled) return;
+  switch (button.dataset.merchant) {
+    case "select": return openManualCheckout(button.dataset.plan);
+    case "referral": return $("#merchant-access")?.scrollIntoView({block: "start"});
+    case "copy-installation": return copyInstallation();
+    case "copy-order": {
+      const dialog = button.closest("dialog.manual-checkout");
+      const plan = subscriptionPlans.find(([id]) => id === dialog?.dataset.plan);
+      const method = dialog?.querySelector('input[name="manual-method"]:checked')?.value;
+      const installation = ST.offline_access?.installation_id;
+      if (!plan || !manualPaymentMethods[method] || !installation) return toast(localText("requestFailed"));
+      const request = `${localText("checkout")} · Fortnite Pirate Token\n${localText("plan")}: ${localText(plan[1])} — ${plan[2]} ₽\n${localText("method")}: ${localText(manualPaymentMethods[method][0])}\n${localText("installation")}: ${installation}\n${localText("unverified")}`;
+      try {
+        await navigator.clipboard.writeText(request);
+        toast(localText("requestCopied"));
+      } catch {
+        toast(localText("requestCopyFailed"));
+      }
+      return;
+    }
+    case "checkout-support":
+      button.closest("dialog")?.close();
+      page = "support";
+      return render(true);
+    case "pick-file": return $("#offline-license-file")?.click();
+    case "activate": {
+      const input = $("#offline-license");
+      const license = input?.value.trim();
+      if (!license) return toast(localText("licenseMissing"));
+      button.disabled = true;
+      try {
+        const result = await api.offline_activate(license);
+        if (!result?.ok) {
+          return toast(result?.error === "public_key_missing"
+            ? localText("publicKey") : localText("invalidLicense"));
+        }
+        input.value = "";
+        await tick();
+        toast(localText("activated"));
+      } catch {
+        toast(localText("activationFailed"));
+      } finally {
+        button.disabled = false;
+      }
+    }
+  }
+});
+
+document.addEventListener("change", async ev => {
+  if (ev.target.id !== "offline-license-file") return;
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  ev.target.value = "";
+  if (file.size > 16384) return toast(localText("largeFile"));
+  try {
+    const license = await file.text();
+    const input = $("#offline-license");
+    if (input) input.value = license;
+  } catch {
+    toast(localText("readFailed"));
+  }
+});
+
 // ---------------------------------------------------------------- events
 async function patch(p) {
   const result = await api.set_config(p);
   await tick();
   if (!result?.ok) {
     render(true);
-    toast(t("support.failed"));
+    toast(localText("supportFailed"));
   }
   return result;
 }
@@ -655,11 +876,11 @@ document.addEventListener("click", async ev => {
   if (windowButton) {
     if (!window.pywebview || !window.pywebview.api) return;
     try { await window.pywebview.api["window_" + windowButton.dataset.window](); }
-    catch (err) { toast("Не удалось управлять окном: " + String(err)); }
+    catch (err) { toast(localText("windowFailed") + ": " + String(err)); }
     return;
   }
   const el = ev.target.closest("[data-page],[data-act],[data-plan],[data-ui],[data-theme],[data-tog],[data-cadd],[data-cdel],[data-ptog],[data-pdel],[data-flt],[data-tdel]");
-  if (!el || el.disabled) return; const d = el.dataset;
+  if (!el || el.disabled || el.dataset.merchant) return; const d = el.dataset;
   if (d.act && CONTROL_ACTIONS.has(d.act)) {
     // A pointerdown already sent the command. Keyboard-triggered clicks still work.
     if (lastPointerControl?.element === el && Date.now() - lastPointerControl.at < 2000) {
@@ -679,7 +900,7 @@ document.addEventListener("click", async ev => {
   if (d.theme) return patch({theme: d.theme});
   if (d.tog) return patch({[d.tog]: !ST.cfg[d.tog]});
   if (d.cadd) { await api.counter_add(d.cadd, +d.d); return tick(); }
-  if (d.cdel) { if (confirm(t("trk.delete_counter"))) { await api.counter_delete(d.cdel); tick(); } return; }
+  if (d.cdel) { if (confirm(localText("deleteCounter"))) { await api.counter_delete(d.cdel); tick(); } return; }
   if (d.ptog) { await api.prize_toggle(d.ptog); return tick(); }
   if (d.pdel) { await api.prize_delete(d.pdel); return tick(); }
   if (d.flt) { flt = d.flt; return render(true); }
@@ -690,30 +911,30 @@ document.addEventListener("click", async ev => {
     const url = ($("#discord-webhook") || {}).value || "";
     const enabled = Boolean($("#discord-enabled")?.checked);
     const result = await api.discord_configure(url.trim(), enabled);
-    toast(result.ok ? t("discord.saved") : t("support.failed") + ": " + String(result.error || ""));
+    toast(result.ok ? t("discord.saved") : localText("supportFailed") + ": " + String(result.error || ""));
     return tick();
   }
   if (a === "discord_test") {
     const result = await api.discord_test();
-    toast(result.ok ? t("discord.queued") : t("support.failed") + ": " + String(result.error || ""));
+    toast(result.ok ? t("discord.queued") : localText("supportFailed") + ": " + String(result.error || ""));
     return tick();
   }
   if (a === "discord_clear") {
-    if (!confirm(t("discord.confirm_clear"))) return;
+    if (!confirm(localText("clearDiscord"))) return;
     const result = await api.discord_clear();
-    toast(result.ok ? t("discord.cleared") : t("support.failed") + ": " + String(result.error || ""));
+    toast(result.ok ? t("discord.cleared") : localText("supportFailed") + ": " + String(result.error || ""));
     return tick();
   }
   if (a === "license_activate") {
     const key = ($("#license-key")?.value || "").trim();
-    if (!key) {toast("Укажи лицензионный ключ"); return;}
+    if (!key) {toast(localText("licenseKey")); return;}
     const result = await api.license_activate(key);
-    toast(result.ok ? "Сервер подтвердил ключ (тест)" : "Лицензия: " + String(result.error || "ошибка"));
+    toast(result.ok ? localText("verified") : localText("licenseError") + (result.error ? ": " + result.error : ""));
     await tick(); return render(true);
   }
   if (a === "license_check") {
     const result = await api.license_check();
-    toast(result.ok ? "Ключ действителен (тест)" : "Лицензия: " + String(result.error || "ошибка"));
+    toast(result.ok ? localText("verified") : localText("licenseError") + (result.error ? ": " + result.error : ""));
     await tick(); return render(true);
   }
   if (a === "payment_draft") {
@@ -722,7 +943,7 @@ document.addEventListener("click", async ev => {
     const result = await api.payment_interest_create(
       payPlan, payMethod, payMethod === "steam_items" ? payGame : "", skinNote);
     paymentDraft = result;
-    toast(result.ok ? t("payments.draft_saved") : t("support.failed") + ": " + String(result.error || ""));
+    toast(result.ok ? t("payments.draft_saved") : localText("supportFailed") + ": " + String(result.error || ""));
     await tick();
     return render(true);
   }
@@ -736,7 +957,7 @@ document.addEventListener("click", async ev => {
       el.disabled = false;
     }
     if (!supportReport.ok) {
-      toast(t("support.failed") + ": " + String(supportReport.error || ""));
+      toast(localText("supportFailed") + ": " + String(supportReport.error || ""));
       return;
     }
     if (a === "afk_report") page = "support";
@@ -747,7 +968,7 @@ document.addEventListener("click", async ev => {
   }
   if (a === "support_open") {
     const response = await api.open_support(d.channel);
-    if (!response.ok) toast(t("support.failed") + ": " + String(response.error || ""));
+    if (!response.ok) toast(localText("supportFailed") + ": " + String(response.error || ""));
     return;
   }
   if (a === "support_copy") {
@@ -755,11 +976,11 @@ document.addEventListener("click", async ev => {
     try {
       if (!navigator.clipboard?.writeText) throw Error("clipboard unavailable");
       await navigator.clipboard.writeText(supportReport.text);
-      toast(t("support.copied"));
+      toast(localText("reportCopied"));
     } catch (err) {
       const textarea = $("#support-preview");
       textarea?.focus(); textarea?.select();
-      toast(t("support.select_copy"));
+      toast(localText("copyFallback"));
     }
     return;
   }
@@ -780,14 +1001,14 @@ document.addEventListener("click", async ev => {
   if (a === "addp") { if (v("pn").trim()) { await api.prize_add(v("pn")); tick(); } return; }
   if (a === "exp") { const r = await api.tracker_export(); if (r.ok) toast(t("trk.exported", {path: r.path})); return; }
   if (a === "imp") { const r = await api.tracker_import(); if (r.ok) toast(t("trk.imported")); else if (r.error !== "cancelled") toast(t("trk.import_failed")); return tick(); }
-  if (a === "rst") { if (confirm(t("trk.confirm_reset"))) { await api.tracker_reset(); tick(); } return; }
+  if (a === "rst") { if (confirm(localText("resetTracker"))) { await api.tracker_reset(); tick(); } return; }
   if (a === "replay_capture") { tplRole = "replay"; tplName = "play_again"; page = "templates"; tplList = await api.templates(); render(true); return; }
   if (a === "cap") { box = null; toast(t("tpl.capture_wait", {s: 5})); const r = await api.capture_screenshot(5); if (r.ok) { shot = r; render(true); } return; }
   if (a === "cancelshot") { shot = null; box = null; return render(true); }
   if (a === "saveshot") { if (!box) return; const r = await api.save_template(tplRole, tplName || "button", box.fx, box.fy, box.fw, box.fh);
     shot = null; box = null; tplList = await api.templates(); toast(r.ok ? t("toast.saved") : r.error); return tick(); }
   if (a === "test") { testRes = await api.test_templates(); return render(true); }
-  if (a === "ucheck") { await api.update_check(ST.release_mode ? null : v("uurl")); return tick(); }
+  if (a === "ucheck") { await api.update_check_async(ST.release_mode ? null : v("uurl")); return tick(); }
   if (a === "uinst") { toast(t("upd.downloading")); const r = await api.update_install();
     if (r.status === "installer_started") { toast(t("upd.installer_started")); await api.window_close(); return; }
     if (r.status === "error") toast(t("upd.failed", {err:r.error})); return tick();

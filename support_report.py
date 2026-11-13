@@ -49,6 +49,18 @@ def clean(value: object) -> str:
 
 def report_text(version: str, engine, diagnostics: dict, controls: dict,
                 log: list[dict]) -> str:
+    lookup_error = diagnostics.get("game_lookup_error")
+    lookup_known = diagnostics.get("game_lookup_known", "game_found" in diagnostics)
+    if diagnostics.get("game_lookup_pending"):
+        lookup_status = "searching"
+    elif lookup_error:
+        lookup_status = "failed"
+    elif not lookup_known:
+        lookup_status = "unknown"
+    elif diagnostics.get("game_found"):
+        lookup_status = "found"
+    else:
+        lookup_status = "not found"
     lines = [
         "Fortnite Pirate Token — support report",
         "Created (local time): " + datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -67,7 +79,10 @@ def report_text(version: str, engine, diagnostics: dict, controls: dict,
         "Last input: " + clean(engine.last_input),
         "Last input error: " + clean(engine.last_input_error),
         "Waiting reason: " + clean(engine.wait_reason),
-        "Fortnite window found: " + str(bool(diagnostics.get("game_found"))),
+        "Fortnite window found: " + (str(bool(diagnostics.get("game_found")))
+                                     if lookup_known and not lookup_error else "unknown"),
+        "Fortnite window lookup: " + lookup_status,
+        "Fortnite window lookup error: " + (clean(lookup_error) if lookup_error else "none"),
         "Fortnite foreground: " + str(bool(diagnostics.get("game_active"))),
         "Last Python command: " + clean(controls.get("last", "none")),
         "Control sequence: " + str(controls.get("sequence", 0)),

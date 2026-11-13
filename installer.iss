@@ -1,6 +1,6 @@
 ; Easy Rewards per-user installer; generated on Windows with Inno Setup.
 #define AppName "Fortnite Pirate Token"
-#define AppVersion "1.4.2"
+#define AppVersion "1.4.3"
 #define AppExe "EasyRewards.exe"
 
 [Setup]
@@ -26,6 +26,10 @@ RestartApplications=no
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "ukrainian"; MessagesFile: "compiler:Languages\Ukrainian.isl"
+Name: "french"; MessagesFile: "compiler:Languages\French.isl"
+Name: "polish"; MessagesFile: "compiler:Languages\Polish.isl"
+Name: "arabic"; MessagesFile: "compiler:Languages\Arabic.isl"
 
 [Files]
 Source: "dist\EasyRewards\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

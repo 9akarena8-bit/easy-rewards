@@ -45,3 +45,34 @@ def test_foreground_check_rejects_a_window_that_lost_focus(monkeypatch):
     ))
     monkeypatch.setattr(io, "_process_name", lambda hwnd: "FortniteClient-Win64-Shipping.exe")
     assert not io.game_in_foreground()
+
+
+def test_combo_attempts_remaining_key_releases_after_error(monkeypatch):
+    events = []
+
+    def key(scan, up):
+        events.append((scan, up))
+        if up and scan == winio.SCANCODES["d"]:
+            raise OSError("release rejected")
+
+    monkeypatch.setattr(winio, "_key", key)
+    with pytest.raises(OSError, match="release rejected"):
+        winio.WinIO().hold_combo("wd", 0, lambda: False)
+    assert events == [
+        (winio.SCANCODES["w"], False), (winio.SCANCODES["d"], False),
+        (winio.SCANCODES["d"], True), (winio.SCANCODES["w"], True),
+    ]
+
+
+def test_aim_releases_right_button_even_if_left_release_fails(monkeypatch):
+    events = []
+
+    def mouse(flag):
+        events.append(flag)
+        if flag == winio.MOUSEEVENTF_LEFTUP:
+            raise OSError("release rejected")
+
+    monkeypatch.setattr(winio, "_mouse", mouse)
+    with pytest.raises(OSError, match="release rejected"):
+        winio.WinIO().aim_and_fire(0, lambda: False)
+    assert events[-2:] == [winio.MOUSEEVENTF_LEFTUP, winio.MOUSEEVENTF_RIGHTUP]

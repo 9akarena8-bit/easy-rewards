@@ -8,14 +8,38 @@ files that changed.
 """
 import hashlib
 import json
+import os
 import shutil
 import sys
 import zipfile
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
-SKIP_DIRS = {".venv", "_backup", "dist", "__pycache__", ".git"}
-SKIP_FILES = {"config.json", "crash.log", "installed_files.json", "tracker.json", "tracker.bad"}
+SKIP_DIRS = {".venv", "_backup", "dist", "build", "__pycache__", ".git",
+             ".pytest_cache", "node_modules", "saved", "saved-data", "saved_data",
+             "fpt-owner-licensing", "design-approved", "handoff"}
+SKIP_FILES = {"config.json", "crash.log", "installed_files.json", "tracker.json", "tracker.bad",
+              "offline-license.json", "installation-id.txt", "payment_interest_drafts.json"}
+
+
+def release_files(base: Path):
+    """Prune local profiles and owner data before traversal, not just before zipping."""
+    for directory, folders, names in os.walk(base, followlinks=False):
+        folders[:] = sorted(name for name in folders
+                            if name.lower() not in SKIP_DIRS
+                            and not name.lower().startswith(("edge-", "owner-", "."))
+                            and not (Path(directory) / name).is_symlink()
+                            and not (Path(directory) == base and name == "EasyRewards"))
+        for name in sorted(names):
+            p = Path(directory) / name
+            rel = p.relative_to(base)
+            lower = name.lower()
+            if (p.is_symlink() or lower in SKIP_FILES or lower.startswith((".env", "visual-"))
+                    or p.suffix.lower() in {".sqlite", ".sqlite3", ".db", ".key", ".pfx", ".p12", ".spec", ".log"}
+                    or (p.suffix.lower() == ".pem" and rel.as_posix() != "assets/license-public.pem")
+                    or (rel.parts[0] == "templates" and name != ".keep")):
+                continue
+            yield p, rel
 
 
 def main() -> None:
@@ -30,12 +54,7 @@ def main() -> None:
         shutil.rmtree(files_dir)
     files = {}
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
-        for p in sorted(BASE.rglob("*")):
-            rel = p.relative_to(BASE)
-            if p.is_dir() or SKIP_DIRS & set(rel.parts) or p.name in SKIP_FILES:
-                continue
-            if rel.parts[0] == "templates" and p.name != ".keep":
-                continue  # never ship personal templates
+        for p, rel in release_files(BASE):
             z.write(p, Path("EasyRewards") / rel)
             (files_dir / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(p, files_dir / rel)

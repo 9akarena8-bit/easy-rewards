@@ -10,3 +10,11 @@ tracker.json
 crash.log
 installed_files.json
 templates/*/*.png
+build/
+release/
+.buildenv/
+edge-design-*/
+visual-*.html
+private-key.pem
+*.sqlite3
+*-access.json

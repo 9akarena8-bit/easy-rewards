@@ -97,6 +97,18 @@ def _key(scan: int, up: bool) -> None:
     _send(INPUT(INPUT_KEYBOARD, _INPUTUNION(ki=KEYBDINPUT(0, scan, flags, 0, 0))))
 
 
+def _release_all(release, held) -> None:
+    """Attempt every release before reporting a rejected Windows input."""
+    error = None
+    for value in reversed(held):
+        try:
+            release(value)
+        except OSError as exc:
+            error = error or exc
+    if error is not None:
+        raise error
+
+
 def _mouse(flags: int) -> None:
     _send(INPUT(INPUT_MOUSE, _INPUTUNION(mi=MOUSEINPUT(0, 0, 0, flags, 0, 0))))
 
@@ -210,11 +222,7 @@ class WinIO:
             while time.monotonic() < end and not should_abort():
                 time.sleep(min(.03, end - time.monotonic()))
         finally:
-            for scan in reversed(held):
-                try:
-                    _key(scan, up=True)
-                except OSError:
-                    pass
+            _release_all(lambda scan: _key(scan, up=True), held)
 
     def slide_sequence(self, seconds: float, jump: bool,
                        should_abort: Callable[[], bool]) -> None:
@@ -258,14 +266,7 @@ class WinIO:
                 up("space")
             pause(max(0.0, min(float(seconds), 4.0) - .9))
         finally:
-            release_error = None
-            for key in reversed(held):
-                try:
-                    _key(SCANCODES[key], up=True)
-                except OSError as exc:
-                    release_error = release_error or exc
-            if release_error is not None:
-                raise release_error
+            _release_all(lambda key: _key(SCANCODES[key], up=True), held)
 
     def move_mouse_relative(self, dx: int, dy: int, seconds: float,
                             should_abort: Callable[[], bool]) -> None:
@@ -319,9 +320,10 @@ class WinIO:
             while not should_abort() and time.monotonic() < end:
                 time.sleep(min(.03, end - time.monotonic()))
         finally:
+            releases = [MOUSEEVENTF_RIGHTUP]
             if left_down:
-                _mouse(MOUSEEVENTF_LEFTUP)
-            _mouse(MOUSEEVENTF_RIGHTUP)
+                releases.append(MOUSEEVENTF_LEFTUP)
+            _release_all(_mouse, releases)
 
     def foreground_title(self) -> str:
         """Title of the active window; used only for diagnostics."""
@@ -350,8 +352,7 @@ class WinIO:
             while time.monotonic() < end and not should_abort():
                 time.sleep(min(.05, max(0., end - time.monotonic())))
         finally:
-            for scan in reversed(held):
-                _key(scan, up=True)
+            _release_all(lambda scan: _key(scan, up=True), held)
 
     def _process_name(self, hwnd) -> str:
         """Read the executable name of a visible window, without injecting or hooking."""

@@ -54,6 +54,21 @@ class Orders:
                 CREATE TABLE IF NOT EXISTS entitlements (
                     account_id TEXT PRIMARY KEY REFERENCES accounts, expires_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS referral_codes (
+                    account_id TEXT PRIMARY KEY REFERENCES accounts, code TEXT UNIQUE NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS referrals (
+                    invited_id TEXT PRIMARY KEY REFERENCES accounts,
+                    inviter_id TEXT NOT NULL REFERENCES accounts,
+                    qualified_order TEXT UNIQUE REFERENCES orders,
+                    CHECK(invited_id != inviter_id)
+                );
+                CREATE TABLE IF NOT EXISTS referral_rewards (
+                    source_order TEXT NOT NULL REFERENCES orders,
+                    account_id TEXT NOT NULL REFERENCES accounts,
+                    consumed_order TEXT UNIQUE REFERENCES orders,
+                    PRIMARY KEY(source_order, account_id)
+                );
             """)
 
     @contextmanager
@@ -153,11 +168,64 @@ class Orders:
         order = dict(row)
         order.pop("request_id")
         order.pop("reference")
+        base = CATALOG[order["plan"]]["amount_kopeks"]
+        order["base_amount_kopeks"] = base
+        order["discount_percent"] = 10 if order["amount_kopeks"] < base else 0
         return {**order, "demo": True}
 
     def entitlement(self, account_id):
         with self.transaction() as db:
             return self._entitlement(db, account_id)
+
+    def referral(self, account_id):
+        with self.transaction(write=True) as db:
+            account = db.execute("SELECT 1 FROM accounts WHERE id=? AND role='buyer'",
+                                 (account_id,)).fetchone()
+            if not account:
+                raise LookupError("buyer_not_found")
+            db.execute("INSERT OR IGNORE INTO referral_codes VALUES(?,?)",
+                       (account_id, secrets.token_hex(12).upper()))
+            code = db.execute("SELECT code FROM referral_codes WHERE account_id=?",
+                              (account_id,)).fetchone()[0]
+            invited = db.execute("SELECT COUNT(*) FROM referrals WHERE inviter_id=?",
+                                 (account_id,)).fetchone()[0]
+            purchases = db.execute(
+                """SELECT COUNT(*) FROM referrals r JOIN orders o ON o.order_id=r.qualified_order
+                   WHERE r.inviter_id=? AND o.status='confirmed'""", (account_id,),
+            ).fetchone()[0]
+            rewards = db.execute(
+                """SELECT COUNT(*) FROM referral_rewards r JOIN orders o ON o.order_id=r.source_order
+                   WHERE r.account_id=? AND r.consumed_order IS NULL AND o.status='confirmed'""",
+                (account_id,),
+            ).fetchone()[0]
+            bound = db.execute("SELECT 1 FROM referrals WHERE invited_id=?", (account_id,)).fetchone()
+            return {"code": code, "invited": invited, "purchases": purchases,
+                    "available_discounts": rewards, "discount_percent": 10 if rewards else 0,
+                    "referrer_applied": bool(bound), "demo": True}
+
+    def apply_referral(self, account_id, code):
+        if not isinstance(code, str) or not re.fullmatch(r"[A-F0-9]{24}", code):
+            raise ValueError("invalid_referral_code")
+        with self.transaction(write=True) as db:
+            inviter = db.execute("SELECT account_id FROM referral_codes WHERE code=?", (code,)).fetchone()
+            if inviter is None or inviter[0] == account_id:
+                raise ValueError("invalid_referral_code")
+            previous = db.execute("SELECT inviter_id FROM referrals WHERE invited_id=?", (account_id,)).fetchone()
+            if previous:
+                if previous[0] != inviter[0]:
+                    raise Conflict("referral_already_applied")
+            else:
+                if db.execute("SELECT 1 FROM orders WHERE account_id=?", (account_id,)).fetchone():
+                    raise Conflict("referral_requires_new_customer")
+                # Disallow direct and indirect invitation loops.
+                ancestor = inviter[0]
+                while ancestor:
+                    if ancestor == account_id:
+                        raise Conflict("referral_cycle")
+                    row = db.execute("SELECT inviter_id FROM referrals WHERE invited_id=?", (ancestor,)).fetchone()
+                    ancestor = row[0] if row else None
+                db.execute("INSERT INTO referrals(invited_id,inviter_id) VALUES(?,?)", (account_id, inviter[0]))
+        return self.referral(account_id)
 
     def get(self, order_id, account_id):
         with self.transaction() as db:
@@ -176,11 +244,20 @@ class Orders:
                     raise Conflict("idempotency_conflict")
                 return self._public(row)
             order_id = secrets.token_hex(16).upper()
+            reward = db.execute(
+                """SELECT r.source_order FROM referral_rewards r JOIN orders o ON o.order_id=r.source_order
+                   WHERE r.account_id=? AND r.consumed_order IS NULL AND o.status='confirmed'
+                   ORDER BY o.confirmed_at,o.rowid LIMIT 1""", (account_id,),
+            ).fetchone()
+            amount = tariff["amount_kopeks"] * (90 if reward else 100) // 100
             db.execute("""INSERT INTO orders
                        (order_id,account_id,request_id,plan,days,amount_kopeks,currency,
                         method,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
                        (order_id, account_id, request_id, plan, tariff["hours"] // 24,
-                        tariff["amount_kopeks"], "RUB", method, "awaiting_payment", int(time.time())))
+                        amount, "RUB", method, "awaiting_payment", int(time.time())))
+            if reward:
+                db.execute("UPDATE referral_rewards SET consumed_order=? WHERE source_order=? AND account_id=?",
+                           (order_id, reward[0], account_id))
             return self._public(self._order(db, order_id, account_id))
 
     def list_orders(self, account_id=None, status="", query="", offset=0):
@@ -220,9 +297,12 @@ class Orders:
         if not isinstance(reason, str) or not 1 <= len(reason.strip()) <= 200:
             raise ValueError("reason_required")
         with self.transaction(write=True) as db:
+            if not db.execute("SELECT 1 FROM accounts WHERE id=? AND role='owner'", (actor,)).fetchone():
+                raise PermissionError("owner_required")
             order = self._order(db, order_id)
             if action == "confirm":
-                if (order["method"] != "bank_transfer" or not REFERENCE.fullmatch(reference)
+                if (order["method"] != "bank_transfer"
+                        or not isinstance(reference, str) or not REFERENCE.fullmatch(reference)
                         or type(amount) is not int or amount != order["amount_kopeks"]):
                     raise ValueError("invalid_demo_reconciliation")
                 if order["reference"] and order["reference"] != reference:
@@ -233,6 +313,12 @@ class Orders:
                 raise Conflict("invalid_transition")
             now = int(time.time())
             if action == "confirm":
+                reward = db.execute(
+                    """SELECT o.status FROM referral_rewards r JOIN orders o ON o.order_id=r.source_order
+                       WHERE r.consumed_order=?""", (order_id,),
+                ).fetchone()
+                if reward and reward[0] != "confirmed":
+                    raise Conflict("referral_discount_revoked")
                 used = db.execute("SELECT 1 FROM orders WHERE reference=?", (reference,)).fetchone()
                 if used:
                     raise Conflict("reference_already_used")
@@ -243,6 +329,30 @@ class Orders:
                        (order_id, actor, event, reason.strip(), now))
             if action in ("confirm", "refund"):
                 self._update_entitlement(db, order["account_id"])
+            if action == "confirm":
+                self._qualify_referral(db, order)
+            elif action in ("reject", "refund"):
+                # An abandoned/reversed purchase does not consume a discount. A refunded
+                # source cannot supply new discounts (queries require confirmed status).
+                db.execute("UPDATE referral_rewards SET consumed_order=NULL WHERE consumed_order=?", (order_id,))
+
+    @staticmethod
+    def _qualify_referral(db, order):
+        account_id, order_id = order["account_id"], order["order_id"]
+        referral = db.execute("SELECT * FROM referrals WHERE invited_id=?", (account_id,)).fetchone()
+        if referral is None or referral["qualified_order"]:
+            return
+        # Only the first ever confirmed payment qualifies, including when an earlier
+        # payment was refunded. Free access and client 'paid' clicks never qualify.
+        count = db.execute(
+            """SELECT COUNT(*) FROM events e JOIN orders o ON o.order_id=e.order_id
+               WHERE o.account_id=? AND e.action='payment_confirmed'""", (account_id,),
+        ).fetchone()[0]
+        if count != 1:
+            return
+        db.execute("UPDATE referrals SET qualified_order=? WHERE invited_id=?", (order_id, account_id))
+        for beneficiary in (account_id, referral["inviter_id"]):
+            db.execute("INSERT INTO referral_rewards(source_order,account_id) VALUES(?,?)", (order_id, beneficiary))
 
     @staticmethod
     def _update_entitlement(db, account_id):
